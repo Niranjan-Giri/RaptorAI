@@ -66,7 +66,7 @@ export default function Login() {
           <a href="/">
             <img
               alt="RAPTOR Lab"
-              src="./public/images/logo.png"
+              src="./images/logo.png"
               className="mx-auto h-20 w-auto"
             />
           </a>
