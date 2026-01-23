@@ -1,13 +1,0 @@
-ply
-format binary_little_endian 1.0
-comment Created by Open3D
-element vertex 44
-property double x
-property double y
-property double z
-property uchar red
-property uchar green
-property uchar blue
-end_header
-Û÷>„Øo@)qµšÆóö?è­Î·ù¿Å¯Šöµ½€@Ü¶Í2ôö?&<fŒaÌø¿Ä®‰Y†;'ù“@±3ü`>øö?gÛX*›ø¿Ä®ŠÿÖuô¼@al¶þÿö?ãÈ×Qù¿Ä®‰vêä3%Ñ@'P5¾÷?rÅº4ù¿Ä®‰+ø€Å•á@~ëœš÷?ˆ‡1Iéø¿Ä­Šÿ#èK@ÓŸEÃ7ö?8IÀz¡îø¿½¨‰EõÇdT@cK&Š7ö?:¢.è°ø¿¼§ˆAzåia@mZ¾$€;ö?ŸBü­>wø¿¼§ˆ^Hô@Ñ¬ì9ö?ÀÀ2Êˆ5ù¿¼§ˆ_Ã­8œ@ÛfL·î=ö?ÔUNÞ/ûø¿¼§ˆš 2„±¥@ºV†x>ö?†ç¢Ù¼ø¿¼§ˆÒM£d&¯@‡s@ ?ö?ƒ.:ò”~ø¿¼§ˆÀ“n8dH@‡æ4fcö?ü`/Gù¿¼©‹ƒ–P@B´cö?P }Æ9ù¿¼©‹Cg6«a[@ª´Œgö?vóœüfÍø¿¼©‹kK\Àºf@>'†ekö?œF¼2”’ø¿½ªŒÁ0Xn@™°1°kö?z€M„ÂSø¿½ªŒ<éo5ÿ—@ôð¿Akö?ÖÚë†STù¿¼©‹€ÃŸ@L;§î€kö?§íè/½ù¿¼©‹&=«@ÜC‚‹doö?·vBÉ?Ùø¿¼©‹þáBËû²@ñž‘uÄoö?p©”bÄ™ø¿¼©‹êãt¾@­$|§sö?"=µöO^ø¿¼©‹Ó©¾ô7@ë†QÛö?¸·0%ù¿¹¥Š¨d7B@TBþÑÞö?Ét-ÎÕø¿¹¥Šº·v˜j@&>?WmÖö?Ùq(Žù¿¹¥Šz'È>q@xO^Öö?A>	áNù¿¹¥Š.(¤™{@ƒ.DÖçÙö?õ
-,ù¿¹¥Š“„±“:‚@¦Ã[1×Ùö?(QL4Òø¿¹¥‰t¾9†”Œ@÷ƒû.`Ýö?ž	ZU–ø¿¹¦ˆVøÁxî–@HD›,éàö?cÜuZø¿¹¦ˆª”ÎÉ™@nx˜:Ýö?ê„ _­ø¿¹¦ˆN4 Ûb¼@:jëêÚö?(?*™¡Vù¿¸¤‰Ò©)´ÚÆ@4šú~Þö?q¶¨rù¿¸¥‰ü‚¹–Í@»l¯3€Þö?Êk‹AƒÙø¿¸¥‡SÑD3’Ð@z}ÎŒïÚö??èS•ø¿¹¦ˆ±«×ä&J@Ð›y”n÷?â<Œ‡ìù¿¼©‹Ùd|QS@@²N_q÷?fp(¨AÆø¿½¨Š¢j¥8·X@a²W&êp÷?Öß¹™~†ø¿¼§ˆ¹Ø‘bX|@Ú2¤AÐc÷?^ã‚»P7ù¿¼§ŠeµÓ@T‰îKlc÷?vÖ“R÷ø¿¼§ŠÖð¯‹@˜}®ž¼f÷?J¡^Ááºø¿½¨‹"ÎÄ‡@µÁO#Wf÷?çŸ÷°zø¿¼©‹Çd:%¬È@¤³Ç…f÷?ýìÅsûø¿¼§Š
