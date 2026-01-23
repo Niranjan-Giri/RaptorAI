@@ -1,0 +1,618 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { LoaderManager } from './loaderManager.js';
+import { InstanceManager } from './instanceManager.js';
+
+export function createSceneManager(app, ui) {
+    // app is a shared state object
+
+    // Create loaders and scene components
+    app.scene = new THREE.Scene();
+    app.scene.background = new THREE.Color(0x202020);
+
+    app.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    app.camera.position.set(0, 0, 2);
+
+    app.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    app.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    app.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    app.renderer.toneMappingExposure = 1.0;
+    app.renderer.shadowMap.enabled = true;                    
+    app.renderer.shadowMap.type = THREE.PCFSoftShadowMap;   
+    app.renderer.setPixelRatio(window.devicePixelRatio);
+    app.renderer.setSize(window.innerWidth, window.innerHeight);
+    const canvasContainer = document.getElementById('canvas-container');
+    console.log('[SceneManager] canvas-container found:', !!canvasContainer);
+    if (canvasContainer) {
+      canvasContainer.appendChild(app.renderer.domElement);
+      console.log('[SceneManager] Canvas appended to canvas-container');
+    } else {
+      console.warn('[SceneManager] canvas-container not found, canvas not appended');
+    }
+
+    app.controls = new OrbitControls(app.camera, app.renderer.domElement);
+
+    // Initialize TransformControls
+    app.transformControl = new TransformControls(app.camera, app.renderer.domElement);
+    app.transformControl.setMode('translate'); // Default to translate mode
+    app.transformControl.addEventListener('dragging-changed', function (event) {
+        // Disable orbit controls while dragging
+        app.controls.enabled = !event.value;
+        // Invalidate bbox cache when object is transformed
+        if (!event.value && app.selectedFile) {
+            const fileData = app.loadedFiles.get(app.selectedFile);
+            if (fileData) fileData._cachedBBox = null;
+        }
+    });
+    app.transformControl.addEventListener('objectChange', function () {
+        // Mark that transform is happening for potential optimizations
+        app._isTransforming = true;
+    });
+    app.scene.add(app.transformControl);
+
+    app.raycaster = new THREE.Raycaster();
+    app.raycaster.params.Points.threshold = 0.01;
+    app.mouse = new THREE.Vector2();
+
+    window.addEventListener('resize', onWindowResize);
+    app.renderer.domElement.addEventListener('click', onCanvasClick);
+    app.renderer.domElement.addEventListener('mousemove', () => { if (ui) ui.updateInfoIconPosition(); });
+    window.addEventListener('keydown', onKeyDown);
+
+    // Lights will be added only when mesh render mode is used to save performance
+    app.ambientLight = null;
+    app.directionalLight = null;
+
+    // Create the LoaderManager and wire callbacks
+    app.loaderManager = new LoaderManager(handleFileLoaded, handleFileProgress, handleFileError);
+    
+    // Create InstanceManager for optimizing repeated objects
+    app.instanceManager = new InstanceManager(app.scene);
+
+    return {
+        init: () => {
+            animate();
+        },
+        loadAllPLYFiles: loadAllPLYFiles,
+        updateFileRender: updateFileRender,
+        toggleFileVisibility: toggleFileVisibility,
+        deselectFile: deselectFile,
+        animateCameraTo: animateCameraTo,
+        frameAllObjects: frameAllObjects,
+        createHighlightBox: createHighlightBox,
+        clearHighlights: clearHighlights,
+        setUI: (newUI) => { ui = newUI; },
+        ensureGeometryHasNormals: ensureGeometryHasNormals,
+        applyColorMode: applyColorMode,
+        setQualityMode: setQualityMode,
+        setRenderMode: setRenderMode,
+        onCanvasClick: onCanvasClick,
+        optimizeInstances: optimizeInstances,
+        toggleInstancing: toggleInstancing,
+        getInstanceStats: getInstanceStats
+    };
+
+    // ----------------- Implementation ------------------
+    
+    /**
+     * Calculate optimal point size for consistent visual density across all screens
+     * Takes into account: viewport size, DPI, camera FOV, and distance to target
+     */
+    function calculatePointSize() {
+        // Base size in world units - this determines the physical size of points in 3D space
+        const baseSize = 0.003;
+        
+        // Account for viewport height to maintain consistent density regardless of window size
+        // Larger viewports need slightly larger points to maintain perceived density
+        const viewportFactor = Math.sqrt(window.innerHeight / 1080);
+        
+        // DPI compensation: Higher DPI screens need larger points to appear the same size
+        // Use sqrt to avoid overcompensation on very high DPI screens
+        const dpiCompensation = Math.sqrt(window.devicePixelRatio);
+        
+        // Camera distance factor: adjust for how close/far the camera typically is
+        const distanceToTarget = app.camera.position.length();
+        const distanceFactor = Math.max(0.5, Math.min(2.0, distanceToTarget / 2.0));
+        
+        return baseSize * viewportFactor * dpiCompensation * distanceFactor;
+    }
+    function onWindowResize() {
+        app.camera.aspect = window.innerWidth / window.innerHeight;
+        app.camera.updateProjectionMatrix();
+        app.renderer.setPixelRatio(window.devicePixelRatio);
+        app.renderer.setSize(window.innerWidth, window.innerHeight);
+
+        // Update point sizes for all loaded files to maintain consistent density across screens
+        if (app.renderMode === 'points') {
+            const optimalSize = calculatePointSize();
+            app.loadedFiles.forEach((fileData) => {
+                if (fileData.object && fileData.object.isPoints) {
+                    fileData.object.material.size = optimalSize;
+                    fileData.object.material.needsUpdate = true;
+                }
+            });
+        }
+    }
+
+    function onKeyDown(event) {
+        if (!app.selectedFile || app.currentMode !== 'select') return;
+        switch (event.key.toLowerCase()) {
+            case 'g': // Translate
+            case 't':
+                app.transformControl.setMode('translate');
+                break;
+            case 'r':
+                app.transformControl.setMode('rotate');
+                break;
+            case 's':
+                app.transformControl.setMode('scale');
+                break;
+            case 'escape':
+                deselectFile();
+                break;
+        }
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        app.controls.update();
+        app.renderer.render(app.scene, app.camera);
+
+        // Throttle info icon updates - only update every 2 frames (30fps max)
+        if (!app._frameCounter) app._frameCounter = 0;
+        app._frameCounter++;
+        if (app._frameCounter % 2 === 0 && app.selectedFile && ui) {
+            ui.updateInfoIconPosition();
+        }
+        // Update highlight label positions/frame dependent UI
+        if (ui && ui.updateFrameDependentUI) ui.updateFrameDependentUI();
+    }
+
+    function loadAllPLYFiles() {
+        // starts loading files and initial UI updates
+        console.log('[SceneManager] Starting to load PLY files...');
+        app.plyFiles.forEach((filepath) => {
+            const filename = filepath.split('/').pop();
+            app.loadedFiles.set(filename, {
+                geometry: null,
+                object: null,
+                visible: true,
+                originalColors: null,
+                codedColors: null,
+                filepath: filepath,
+                isPreview: true,
+                loading: true
+            });
+            app.loaderManager.loadPLY(filepath, filename);
+        });
+        if (ui) ui.createFileCheckboxes();
+    }
+
+    function setQualityMode(mode) {
+        app.qualityMode = mode;
+        app.loaderManager.setQualityMode(mode);
+        app.loaderManager.cancelAll();
+
+        const currentFiles = new Map();
+        app.loadedFiles.forEach((fileData, filename) => {
+            currentFiles.set(filename, {
+                object: fileData.object,
+                visible: fileData.visible,
+                filepath: fileData.filepath
+            });
+        });
+
+        app.loadedFiles.forEach((fileData, filename) => {
+            fileData.loading = true;
+            fileData.isPreview = true;
+            fileData.loadingMessage = `Switching to ${mode} mode...`;
+            fileData.loadingProgress = 0;
+        });
+        if (ui) ui.createFileCheckboxes();
+        app.plyFiles.forEach((filepath) => {
+            const filename = filepath.split('/').pop();
+            app.loaderManager.loadPLY(filepath, filename);
+        });
+    }
+
+    function setRenderMode(mode) {
+        app.renderMode = mode;
+        app.loadedFiles.forEach((fileData, filename) => updateFileRender(filename));
+    }
+
+    function ensureGeometryHasNormals(geometry) {
+        if (!geometry) return;
+        geometry.computeVertexNormals();
+    }
+
+    function createDefaultColors(pointCount) {
+        const colors = new Float32Array(pointCount * 3);
+        for (let i = 0; i < pointCount * 3; i++) {
+            colors[i] = 1.0; // white
+        }
+        return colors;
+    }
+
+    function createCodedColors(geometry) {
+        geometry.computeBoundingBox();
+        const positions = geometry.attributes.position;
+        const colors = [];
+        let minDist = Infinity;
+        let maxDist = -Infinity;
+        for (let i = 0; i < positions.count; i++) {
+            const x = positions.getX(i);
+            const y = positions.getY(i);
+            const z = positions.getZ(i);
+            const dist = Math.sqrt(x * x + y * y + z * z);
+            minDist = Math.min(minDist, dist);
+            maxDist = Math.max(maxDist, dist);
+        }
+        for (let i = 0; i < positions.count; i++) {
+            const x = positions.getX(i);
+            const y = positions.getY(i);
+            const z = positions.getZ(i);
+            const dist = Math.sqrt(x * x + y * y + z * z);
+            const normalizedDist = (dist - minDist) / (maxDist - minDist);
+            let r, g, b;
+            if (normalizedDist < 0.5) {
+                const t = normalizedDist * 2;
+                r = 1 - t; g = 1; b = 0;
+            } else {
+                const t = (normalizedDist - 0.5) * 2;
+                r = t; g = 1 - t; b = 0;
+            }
+            colors.push(r, g, b);
+        }
+        return new Float32Array(colors);
+    }
+
+    function applyColorMode(geometry, filename) {
+        const fileData = app.loadedFiles.get(filename);
+        if (!fileData) return;
+        const colorsToUse = app.colorMode === 'original' ? fileData.originalColors : fileData.codedColors;
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsToUse, 3));
+    }
+
+    function updateFileRender(filename) {
+        const fileData = app.loadedFiles.get(filename);
+        if (!fileData) return;
+
+        // Remove current object if exists
+        if (fileData.object) {
+            app.scene.remove(fileData.object);
+        }
+
+        if (!fileData.visible) return;
+
+        if (app.renderMode === 'points') {
+            const optimalSize = calculatePointSize();
+            const material = new THREE.PointsMaterial({ size: optimalSize, vertexColors: true, color: 0xffffff });
+            fileData.object = new THREE.Points(fileData.geometry, material);
+            fileData.object.castShadow = true;
+            fileData.object.receiveShadow = true;
+        } else {
+            const material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: false, side: THREE.DoubleSide, roughness: 0.7, metalness: 0.0, envMapIntensity: 1.0 });
+            fileData.object = new THREE.Mesh(fileData.geometry, material);
+            fileData.object.castShadow = true;
+            fileData.object.receiveShadow = true;
+            if (!app.ambientLight) {
+                app.ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+                app.scene.add(app.ambientLight);
+                app.directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                app.directionalLight.position.set(5, 5, 5);
+                app.directionalLight.castShadow = true;
+                app.directionalLight.shadow.mapSize.width = 2048;
+                app.directionalLight.shadow.mapSize.height = 2048;
+                app.scene.add(app.directionalLight);
+                const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+                fillLight.position.set(-5, 0, -5);
+                app.scene.add(fillLight);
+            }
+        }
+
+        app.scene.add(fileData.object);
+    }
+
+    function updateGeometryInPlace(targetGeometry, sourceGeometry) {
+        if (sourceGeometry.attributes.position) targetGeometry.setAttribute('position', sourceGeometry.attributes.position);
+        if (sourceGeometry.attributes.color) targetGeometry.setAttribute('color', sourceGeometry.attributes.color);
+        if (sourceGeometry.attributes.normal) targetGeometry.setAttribute('normal', sourceGeometry.attributes.normal);
+        targetGeometry.computeBoundingBox();
+        targetGeometry.attributes.position.needsUpdate = true;
+        if (targetGeometry.attributes.color) targetGeometry.attributes.color.needsUpdate = true;
+        if (targetGeometry.attributes.normal) targetGeometry.attributes.normal.needsUpdate = true;
+    }
+
+    function handleFileLoaded(filename, geometry, metadata) {
+        const { isPreview, totalExpectedPoints, wasDownsampled, isIdleUpdate, isIncremental } = metadata;
+        const fileData = app.loadedFiles.get(filename);
+        if (!fileData) return;
+        ensureGeometryHasNormals(geometry);
+        if (!geometry.attributes.color) geometry.setAttribute('color', new THREE.Float32BufferAttribute(createDefaultColors(geometry.attributes.position.count), 3));
+        
+        // Handle incremental updates more efficiently
+        const isIncrementalUpdate = isPreview && fileData.geometry && fileData.object;
+        if (isIncrementalUpdate && (isIdleUpdate || isIncremental)) {
+            updateGeometryInPlace(fileData.geometry, geometry);
+            fileData.isPreview = isPreview;
+            fileData.loading = isPreview;
+            fileData.wasDownsampled = wasDownsampled;
+            if (ui) ui.createFileCheckboxes();
+            if (ui) ui.ensureSceneInfoForFile(filename);
+        } else {
+            const originalColors = geometry.attributes.color.array.slice();
+            const codedColors = createCodedColors(geometry);
+            const oldObject = fileData.object;
+            app.loadedFiles.set(filename, { ...fileData, geometry, originalColors, codedColors, isPreview, loading: isPreview, wasDownsampled });
+            applyColorMode(geometry, filename);
+            updateFileRender(filename);
+            if (oldObject && oldObject !== app.loadedFiles.get(filename).object) {
+                app.scene.remove(oldObject);
+                if (oldObject.geometry) oldObject.geometry.dispose();
+                if (oldObject.material) oldObject.material.dispose();
+            }
+            if (ui) ui.createFileCheckboxes();
+            if (ui) ui.updateObjectLabelsUI();
+            const pointCount = geometry.attributes.position.count.toLocaleString();
+            console.log(`[${filename}] ${isPreview ? `Preview (${pointCount} points)` : `Complete (${pointCount} points)`}${wasDownsampled ? ' - downsampled' : ''}`);
+            if (!isPreview && app.selectedFile === filename) {
+                const upgradedData = app.loadedFiles.get(filename);
+                if (upgradedData && upgradedData.object) {
+                    app.transformControl.attach(upgradedData.object);
+                    app.transformControl.enabled = true;
+                    app.transformControl.visible = true;
+                    if (ui && ui.updateInfoIconPosition) ui.updateInfoIconPosition();
+                }
+            }
+            if (ui) ui.ensureSceneInfoForFile(filename);
+            
+            // If this is final load (not preview), optimize instances
+            if (!isPreview) {
+                // Defer instance optimization slightly to avoid blocking
+                setTimeout(() => {
+                    const optimizedCount = optimizeInstances();
+                    if (optimizedCount > 0) {
+                        const stats = getInstanceStats();
+                        console.log(`[InstanceManager] Stats: ${stats.instancedMeshCount} instanced meshes, ${stats.drawCallReduction} draw calls saved`);
+                    }
+                }, 100);
+            }
+        }
+    }
+
+    function handleFileProgress(filename, message, progress) {
+        console.log(`[${filename}] ${message} (${progress.toFixed(1)}%)`);
+        const fileData = app.loadedFiles.get(filename);
+        if (fileData) {
+            fileData.loadingMessage = message;
+            fileData.loadingProgress = progress;
+            if (ui) ui.createFileCheckboxes();
+        }
+    }
+
+    function handleFileError(filename, error) {
+        console.error(`[${filename}] Load error:`, error);
+        const fileData = app.loadedFiles.get(filename);
+        if (fileData) {
+            fileData.loading = false;
+            fileData.error = error;
+            if (ui) ui.createFileCheckboxes();
+        }
+    }
+
+    function onCanvasClick(event) {
+        if (app.currentMode !== 'select') return;
+        app.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        app.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        app.raycaster.setFromCamera(app.mouse, app.camera);
+        const objectsToCheck = [];
+        app.loadedFiles.forEach((fileData) => {
+            if (fileData.object && fileData.visible) objectsToCheck.push(fileData.object);
+        });
+        const intersects = app.raycaster.intersectObjects(objectsToCheck, false);
+        if (intersects.length > 0) {
+            const clickedObject = intersects[0].object;
+            if (app.selectedFile) {
+                const prevData = app.loadedFiles.get(app.selectedFile);
+                if (prevData && prevData.object && app.renderMode === 'points') {
+                    prevData.object.material.vertexColors = true;
+                    prevData.object.material.color.set(0xffffff);
+                    prevData.object.material.needsUpdate = true;
+                }
+            }
+            for (const [filename, fileData] of app.loadedFiles.entries()) {
+                if (fileData.object === clickedObject) {
+                    app.selectedFile = filename;
+                    console.log('Selected file:', filename);
+                    console.log('Selected point:', intersects[0].point);
+                    if (app.renderMode === 'points') {
+                        clickedObject.material.vertexColors = false;
+                        clickedObject.material.color.set(0xffffff);
+                        clickedObject.material.needsUpdate = true;
+                    }
+                    app.transformControl.attach(clickedObject);
+                    app.transformControl.enabled = true;
+                    app.transformControl.visible = true;
+                    if (ui) ui.updateObjectLabelsUI();
+                    const fd = app.loadedFiles.get(filename);
+                    if (fd && fd.geometry) {
+                        if (!fd.geometry.boundingBox) fd.geometry.computeBoundingBox();
+                        const center = fd.geometry.boundingBox.getCenter(new THREE.Vector3()).toArray();
+                        const size = fd.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
+                        createHighlightBox({ name: filename, filename: filename, center, size });
+                    }
+                    break;
+                }
+            }
+        } else {
+            deselectFile();
+        }
+    }
+
+    function toggleFileVisibility(filename, visible) {
+        const fileData = app.loadedFiles.get(filename);
+        if (!fileData) return;
+        fileData.visible = visible;
+        if (visible) updateFileRender(filename);
+        else {
+            if (fileData.object) app.scene.remove(fileData.object);
+            if (app.selectedFile === filename) deselectFile();
+            clearHighlights();
+        }
+    }
+
+    function deselectFile() {
+        if (app.selectedFile) {
+            const prevData = app.loadedFiles.get(app.selectedFile);
+            if (prevData && prevData.object && app.renderMode === 'points') {
+                prevData.object.material.vertexColors = true;
+                prevData.object.material.color.set(0xffffff);
+                prevData.object.material.needsUpdate = true;
+            }
+        }
+        app.selectedFile = null;
+        if (app.transformControl) {
+            app.transformControl.detach();
+            app.transformControl.enabled = false;
+            app.transformControl.visible = false;
+        }
+        if (app.infoIcon) app.infoIcon.style.display = 'none';
+        clearHighlights();
+        if (ui) ui.updateObjectLabelsUI();
+    }
+
+    function clearHighlights() {
+        if (!app.highlightBoxes) app.highlightBoxes = new Map();
+        app.highlightBoxes.forEach((mesh, name) => {
+            app.scene.remove(mesh);
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        });
+        app.highlightBoxes.clear();
+    }
+
+    function createHighlightBox({ name, filename, center = [0,0,0], size = [1,1,1] }) {
+        clearHighlights();
+        const boxSize = new THREE.Vector3(size[0] || 1, size[1] || 1, size[2] || 1);
+        const geometry = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
+        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.12, depthTest: false });
+        const boxMesh = new THREE.Mesh(geometry, material);
+        const centerVec = new THREE.Vector3(center[0] || 0, center[1] || 0, center[2] || 0);
+        if (filename) {
+            const fileEntry = Array.from(app.loadedFiles.values()).find(f => f.filepath && (f.filepath.endsWith(filename) || f.filepath.includes(filename)));
+            if (fileEntry && fileEntry.object) {
+                fileEntry.geometry.computeBoundingBox();
+                const localCenter = new THREE.Vector3();
+                fileEntry.geometry.boundingBox.getCenter(localCenter);
+                fileEntry.object.localToWorld(localCenter);
+                boxMesh.position.copy(localCenter);
+            } else {
+                boxMesh.position.copy(centerVec);
+            }
+        } else {
+            boxMesh.position.copy(centerVec);
+        }
+        const edges = new THREE.EdgesGeometry(geometry);
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 }));
+        line.position.copy(boxMesh.position);
+        app.scene.add(boxMesh);
+        app.scene.add(line);
+        if (!app.highlightBoxes) app.highlightBoxes = new Map();
+        const key = name || filename || 'highlight';
+        app.highlightBoxes.set(key, boxMesh);
+        app.highlightBoxes.set(key + ':outline', line);
+        animateCameraTo(boxMesh.position, { size: boxSize }, 700);
+    }
+
+    function animateCameraTo(targetCenter, options = {}, duration = 700) {
+        if (!app.camera) return;
+        if (app.cameraAnim) cancelAnimationFrame(app.cameraAnim.raf);
+        const startPos = app.camera.position.clone();
+        const startTarget = app.controls.target.clone();
+        const endTarget = targetCenter.clone();
+        const size = options.size || new THREE.Vector3(1,1,1);
+        const maxSize = Math.max(size.x, size.y, size.z);
+        const fov = (app.camera.fov * Math.PI) / 180.0;
+        const distance = Math.max(1.0, maxSize * 1.8 / Math.tan(fov / 2));
+        const dir = app.camera.position.clone().sub(app.controls.target).normalize();
+        const endPos = endTarget.clone().add(dir.multiplyScalar(distance));
+        const startTime = performance.now();
+        function tick(now) {
+            const t = Math.min(1, (now - startTime) / duration);
+            const s = t * t * (3 - 2 * t);
+            app.camera.position.lerpVectors(startPos, endPos, s);
+            app.controls.target.lerpVectors(startTarget, endTarget, s);
+            app.controls.update();
+            if (t < 1) app.cameraAnim.raf = requestAnimationFrame(tick);
+            else app.cameraAnim = null;
+        }
+        app.cameraAnim = { raf: requestAnimationFrame(tick) };
+    }
+
+    /**
+     * Frame all visible objects in the scene
+     */
+    function frameAllObjects(duration = 700) {
+        const visibleObjects = [];
+        app.loadedFiles.forEach((fileData) => {
+            if (fileData.object && fileData.visible) {
+                visibleObjects.push(fileData.object);
+            }
+        });
+
+        if (visibleObjects.length === 0) return;
+
+        // Calculate combined bounding box
+        const boundingBox = new THREE.Box3();
+        visibleObjects.forEach(obj => {
+            obj.geometry.computeBoundingBox();
+            boundingBox.expandByObject(obj);
+        });
+
+        const center = boundingBox.getCenter(new THREE.Vector3());
+        const size = boundingBox.getSize(new THREE.Vector3());
+        const maxSize = Math.max(size.x, size.y, size.z);
+
+        // Animate camera to frame the objects
+        const fov = (app.camera.fov * Math.PI) / 180.0;
+        const distance = Math.max(1.0, maxSize * 1.8 / Math.tan(fov / 2));
+        const dir = app.camera.position.clone().sub(app.controls.target).normalize();
+        const endPos = center.clone().add(dir.multiplyScalar(distance));
+
+        if (app.cameraAnim) cancelAnimationFrame(app.cameraAnim.raf);
+        const startPos = app.camera.position.clone();
+        const startTarget = app.controls.target.clone();
+        const startTime = performance.now();
+
+        function tick(now) {
+            const t = Math.min(1, (now - startTime) / duration);
+            const s = t * t * (3 - 2 * t);
+            app.camera.position.lerpVectors(startPos, endPos, s);
+            app.controls.target.lerpVectors(startTarget, center, s);
+            app.controls.update();
+            if (t < 1) app.cameraAnim.raf = requestAnimationFrame(tick);
+            else app.cameraAnim = null;
+        }
+        app.cameraAnim = { raf: requestAnimationFrame(tick) };
+    }
+    
+    function optimizeInstances() {
+        if (!app.instanceManager) return 0;
+        const count = app.instanceManager.optimizeScene(app.loadedFiles);
+        return count;
+    }
+    
+    function toggleInstancing(enabled) {
+        if (!app.instanceManager) return;
+        app.instanceManager.setEnabled(enabled);
+        if (enabled) {
+            optimizeInstances();
+        }
+    }
+    
+    function getInstanceStats() {
+        if (!app.instanceManager) return null;
+        return app.instanceManager.getStats();
+    }
+}
