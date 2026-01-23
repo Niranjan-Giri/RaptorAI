@@ -66,13 +66,13 @@ async function loadAndProcessPLY(url, filename, centerOffset, qualityMode = 'dow
         });
 
         // Center the geometry
-        if (centerOffset) {
-            geometry.translate(-centerOffset.x, -centerOffset.y, -centerOffset.z);
-        } else {
-            geometry.computeBoundingBox();
-            const center = geometry.boundingBox.getCenter(new THREE.Vector3());
-            geometry.translate(-center.x, -center.y, -center.z);
-        }
+        // if (centerOffset) {
+        //     geometry.translate(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+        // } else {
+        //     geometry.computeBoundingBox();
+        //     const center = geometry.boundingBox.getCenter(new THREE.Vector3());
+        //     geometry.translate(-center.x, -center.y, -center.z);
+        // }
 
         // Ensure normals and colors exist
         ensureGeometryHasNormals(geometry);
@@ -147,6 +147,7 @@ function parsePLY(data) {
 /**
  * Parse PLY header
  */
+
 function parseHeader(headerText) {
     const lines = headerText.split('\n');
     const header = {
