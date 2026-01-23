@@ -22,10 +22,12 @@ export const fetchProcessedPointclouds = async () => {
         return {
           id: pcl.id,
           name: pcl.name,
-          description: pcl.description,
+          description: pcl.description || "Processed pointcloud project",
           createdAt: pcl.createdAt,
           uploadedAt: pcl.uploadedAt,
+          thumbnail: pcl.thumbnail,
           allUrls: flattenedUrls, // All URLs grouped by category
+          processedDownloadUrls: pcl.processedDownloadUrls, // Keep original for reference
         };
       });
 
