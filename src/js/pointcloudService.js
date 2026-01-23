@@ -2,7 +2,7 @@ import api from "../api";
 
 export const fetchProcessedPointclouds = async () => {
   try {
-    const response = await api.get('/pointclouds');
+    const response = await api.get('/pointclouds/');
     console.log("[Profile] Pointclouds response:", response.data);
 
     // Filter for processed pointclouds and map to project format
