@@ -91,23 +91,28 @@ const Viewer = () => {
           }else if(processedDownloadUrls && Object.keys(processedDownloadUrls).length > 0){
             // Load from processed download URLs (project clicked)
             setIsLoading(true);
-                        
-            // Transform processedDownloadUrls into labeled array
-            const plyFilesWithNames = [];
-            const plyUrls = [];
             
-            Object.entries(processedDownloadUrls).forEach(([category, urls]) => {
-              const urlArray = Array.isArray(urls) ? urls : [urls];
-              urlArray.forEach((url, index) => {
-                const name = urlArray.length > 1 ? `${category} ${index}` : category;
-                plyFilesWithNames.push({ name, url });
-                plyUrls.push(url);
-              });
-            });
+            // Use the pre-calculated 'files' list from pointcloudService if available, 
+            // otherwise fallback to generating it here (legacy support)
+            let filesToLoad = [];
+            
+            // Check if we have the new 'files' structure in location.state (assuming passed from Projects)
+            if (location.state && location.state.files) {
+                 filesToLoad = location.state.files;
+            } else {
+                // Fallback generation (bag1, bag2 style)
+                Object.entries(processedDownloadUrls).forEach(([category, urls]) => {
+                  const urlArray = Array.isArray(urls) ? urls : [urls];
+                  urlArray.forEach((url, index) => {
+                    const name = urlArray.length > 1 ? `${category}${index + 1}` : category;
+                    filesToLoad.push({ name, url });
+                  });
+                });
+            }
                         
             // Set the PLY files and names
-            app.plyFiles = plyUrls;
-            app.plyFileNames = plyFilesWithNames.map(f => f.name);
+            app.plyFiles = filesToLoad.map(f => f.url);
+            app.plyFileNames = filesToLoad.map(f => f.name);
             
             // Clear previously loaded files from the scene
             app.loadedFiles.forEach((fileData) => {
