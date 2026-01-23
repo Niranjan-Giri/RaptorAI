@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_API_KEY = import.meta.env.GEMINI_API_KEY;
 
 export function createQueryHandler(app, sceneManager, ui) {
     const queryCache = new Map();
