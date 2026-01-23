@@ -179,6 +179,74 @@ function parseHeader(headerText) {
 }
 
 /**
+ * Helper function to read property value based on its type
+ */
+function readPropertyValue(dataView, offset, property, littleEndian) {
+    const type = property.type;
+    
+    switch (type) {
+        case 'float':
+        case 'float32':
+            return dataView.getFloat32(offset, littleEndian);
+        case 'double':
+        case 'float64':
+            return dataView.getFloat64(offset, littleEndian);
+        case 'int':
+        case 'int32':
+            return dataView.getInt32(offset, littleEndian);
+        case 'uint':
+        case 'uint32':
+            return dataView.getUint32(offset, littleEndian);
+        case 'short':
+        case 'int16':
+            return dataView.getInt16(offset, littleEndian);
+        case 'ushort':
+        case 'uint16':
+            return dataView.getUint16(offset, littleEndian);
+        case 'char':
+        case 'int8':
+            return dataView.getInt8(offset);
+        case 'uchar':
+        case 'uint8':
+            return dataView.getUint8(offset);
+        default:
+            console.warn(`Unknown property type: ${type}, defaulting to float32`);
+            return dataView.getFloat32(offset, littleEndian);
+    }
+}
+
+/**
+ * Helper function to get property size in bytes
+ */
+function getPropertySize(type) {
+    switch (type) {
+        case 'float':
+        case 'float32':
+        case 'int':
+        case 'int32':
+        case 'uint':
+        case 'uint32':
+            return 4;
+        case 'double':
+        case 'float64':
+            return 8;
+        case 'short':
+        case 'int16':
+        case 'ushort':
+        case 'uint16':
+            return 2;
+        case 'char':
+        case 'int8':
+        case 'uchar':
+        case 'uint8':
+            return 1;
+        default:
+            console.warn(`Unknown property type: ${type}, defaulting to 4 bytes`);
+            return 4;
+    }
+}
+
+/**
  * Parse binary PLY data
  */
 function parseBinaryPLY(dataView, offset, header, geometry) {
@@ -193,51 +261,72 @@ function parseBinaryPLY(dataView, offset, header, geometry) {
     let hasColor = properties.some(p => p.name === 'red' || p.name === 'diffuse_red');
     let hasNormal = properties.some(p => p.name === 'nx');
 
-    // Calculate stride
+    // Calculate stride and store property info
     let stride = 0;
-    const propertyOffsets = {};
+    const propertyInfo = {};
     for (const prop of properties) {
-        propertyOffsets[prop.name] = stride;
-        
-        if (prop.type === 'float' || prop.type === 'float32') {
-            stride += 4;
-        } else if (prop.type === 'uchar' || prop.type === 'uint8') {
-            stride += 1;
-        } else if (prop.type === 'int' || prop.type === 'int32') {
-            stride += 4;
-        } else if (prop.type === 'double') {
-            stride += 8;
-        }
+        propertyInfo[prop.name] = {
+            offset: stride,
+            type: prop.type
+        };
+        stride += getPropertySize(prop.type);
     }
 
     // Read vertices
     for (let i = 0; i < vertices; i++) {
         const vertexOffset = offset + (i * stride);
 
-        // Position
-        const x = dataView.getFloat32(vertexOffset + propertyOffsets['x'], littleEndian);
-        const y = dataView.getFloat32(vertexOffset + propertyOffsets['y'], littleEndian);
-        const z = dataView.getFloat32(vertexOffset + propertyOffsets['z'], littleEndian);
+        // Position - handle any numeric type
+        const xProp = propertyInfo['x'];
+        const yProp = propertyInfo['y'];
+        const zProp = propertyInfo['z'];
+        
+        const x = readPropertyValue(dataView, vertexOffset + xProp.offset, xProp, littleEndian);
+        const y = readPropertyValue(dataView, vertexOffset + yProp.offset, yProp, littleEndian);
+        const z = readPropertyValue(dataView, vertexOffset + zProp.offset, zProp, littleEndian);
         positions.push(x, y, z);
 
         // Color
         if (hasColor) {
-            const rOffset = propertyOffsets['red'] ?? propertyOffsets['diffuse_red'];
-            const gOffset = propertyOffsets['green'] ?? propertyOffsets['diffuse_green'];
-            const bOffset = propertyOffsets['blue'] ?? propertyOffsets['diffuse_blue'];
+            const rProp = propertyInfo['red'] ?? propertyInfo['diffuse_red'];
+            const gProp = propertyInfo['green'] ?? propertyInfo['diffuse_green'];
+            const bProp = propertyInfo['blue'] ?? propertyInfo['diffuse_blue'];
             
-            const r = dataView.getUint8(vertexOffset + rOffset) / 255;
-            const g = dataView.getUint8(vertexOffset + gOffset) / 255;
-            const b = dataView.getUint8(vertexOffset + bOffset) / 255;
-            colors.push(r, g, b);
+            if (rProp && gProp && bProp) {
+                let r = readPropertyValue(dataView, vertexOffset + rProp.offset, rProp, littleEndian);
+                let g = readPropertyValue(dataView, vertexOffset + gProp.offset, gProp, littleEndian);
+                let b = readPropertyValue(dataView, vertexOffset + bProp.offset, bProp, littleEndian);
+                
+                // Normalize color values to 0-1 range
+                // If values are already 0-1 (float), leave as is
+                // If values are 0-255 (uchar/uint8), divide by 255
+                if (rProp.type.includes('char') || rProp.type.includes('int8')) {
+                    r = r / 255;
+                    g = g / 255;
+                    b = b / 255;
+                } else if (r > 1 || g > 1 || b > 1) {
+                    // Handle cases where colors are stored as larger integers
+                    r = r / 255;
+                    g = g / 255;
+                    b = b / 255;
+                }
+                
+                colors.push(r, g, b);
+            }
         }
 
         // Normal
         if (hasNormal) {
-            const nx = dataView.getFloat32(vertexOffset + propertyOffsets['nx'], littleEndian);
-            const ny = dataView.getFloat32(vertexOffset + propertyOffsets['ny'], littleEndian);
-            const nz = dataView.getFloat32(vertexOffset + propertyOffsets['nz'], littleEndian);
-            normals.push(nx, ny, nz);
+            const nxProp = propertyInfo['nx'];
+            const nyProp = propertyInfo['ny'];
+            const nzProp = propertyInfo['nz'];
+            
+            if (nxProp && nyProp && nzProp) {
+                const nx = readPropertyValue(dataView, vertexOffset + nxProp.offset, nxProp, littleEndian);
+                const ny = readPropertyValue(dataView, vertexOffset + nyProp.offset, nyProp, littleEndian);
+                const nz = readPropertyValue(dataView, vertexOffset + nzProp.offset, nzProp, littleEndian);
+                normals.push(nx, ny, nz);
+            }
         }
     }
 
@@ -260,18 +349,70 @@ function parseASCIIPLY(headerText, data, headerLength, header, geometry) {
 
     const positions = [];
     const colors = [];
+    const normals = [];
+    
+    // Build property map for index lookup
+    const propMap = {};
+    header.properties.forEach((prop, idx) => {
+        propMap[prop.name] = { index: idx, type: prop.type };
+    });
+    
+    const hasColor = propMap['red'] || propMap['diffuse_red'];
+    const hasNormal = propMap['nx'];
     
     for (let i = 0; i < header.vertices && i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
         
-        const values = line.split(/\s+/).map(parseFloat);
+        const values = line.split(/\s+/).map(v => {
+            const num = parseFloat(v);
+            // Check if parsing failed
+            if (isNaN(num)) {
+                // Try parsing as integer
+                const intNum = parseInt(v);
+                return isNaN(intNum) ? 0 : intNum;
+            }
+            return num;
+        });
+        
         if (values.length >= 3) {
-            positions.push(values[0], values[1], values[2]);
+            // Position - handle all numeric types
+            const xIdx = propMap['x']?.index ?? 0;
+            const yIdx = propMap['y']?.index ?? 1;
+            const zIdx = propMap['z']?.index ?? 2;
             
-            // If we have RGB values (usually values[3], [4], [5])
-            if (values.length >= 6) {
-                colors.push(values[3] / 255, values[4] / 255, values[5] / 255);
+            positions.push(values[xIdx], values[yIdx], values[zIdx]);
+            
+            // Color
+            if (hasColor && values.length >= 6) {
+                const rIdx = propMap['red']?.index ?? propMap['diffuse_red']?.index ?? 3;
+                const gIdx = propMap['green']?.index ?? propMap['diffuse_green']?.index ?? 4;
+                const bIdx = propMap['blue']?.index ?? propMap['diffuse_blue']?.index ?? 5;
+                
+                let r = values[rIdx];
+                let g = values[gIdx];
+                let b = values[bIdx];
+                
+                // Normalize color values - if they're > 1, assume 0-255 range
+                if (r > 1 || g > 1 || b > 1) {
+                    r = r / 255;
+                    g = g / 255;
+                    b = b / 255;
+                }
+                
+                colors.push(r, g, b);
+            }
+            
+            // Normals
+            if (hasNormal) {
+                const nxIdx = propMap['nx']?.index;
+                const nyIdx = propMap['ny']?.index;
+                const nzIdx = propMap['nz']?.index;
+                
+                if (nxIdx !== undefined && nyIdx !== undefined && nzIdx !== undefined &&
+                    values.length > Math.max(nxIdx, nyIdx, nzIdx)) {
+                    normals.push(values[nxIdx], values[nyIdx], values[nzIdx]);
+                }
             }
         }
     }
@@ -279,6 +420,9 @@ function parseASCIIPLY(headerText, data, headerLength, header, geometry) {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     if (colors.length > 0) {
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    }
+    if (normals.length > 0) {
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     }
 }
 
