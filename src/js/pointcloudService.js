@@ -3,8 +3,6 @@ import api from "../api";
 export const fetchProcessedPointclouds = async () => {
   try {
     const response = await api.get('/pointclouds/');
-    console.log("[Profile] Pointclouds response:", response.data);
-
     // Filter for processed pointclouds and map to project format
     const allPointclouds = Array.isArray(response.data)
       ? response.data
@@ -33,7 +31,6 @@ export const fetchProcessedPointclouds = async () => {
 
     return processedPointclouds;
   } catch (error) {
-    console.error("[Profile] Error fetching processed pointclouds:", error);
     throw error;
   }
 };
