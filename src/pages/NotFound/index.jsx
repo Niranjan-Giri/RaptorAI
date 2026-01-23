@@ -9,7 +9,7 @@ function NotFound() {
         <div className="sm:mx-auto sm:w-full sm:max-w-sm">
           <img
             alt="RAPTOR Lab"
-            src="./public/images/logo.png"
+            src="./images/logo.png"
             className="mx-auto h-20 w-auto"
           />
           <h2 className="mt-10 text-center text-2xl/9 font-bold tracking-tight text-white">404 - Page Not Found</h2>
