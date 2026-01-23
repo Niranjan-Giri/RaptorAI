@@ -172,8 +172,27 @@ export function createSceneManager(app, ui) {
     function loadAllPLYFiles() {
         // starts loading files and initial UI updates
         console.log('[SceneManager] Starting to load PLY files...');
-        app.plyFiles.forEach((filepath) => {
-            const filename = filepath.split('/').pop();
+        
+        // Clear duplicates map for this load session to handle unrelated files with same name
+        const usedNames = new Set();
+        
+        app.plyFiles.forEach((filepath, index) => {
+            let filename = filepath.split('/').pop();
+            
+            // Use friendly name if available (passed from Viewer/index.jsx)
+            if (app.plyFileNames && app.plyFileNames[index]) {
+                filename = app.plyFileNames[index];
+            }
+            
+            // Ensure unique filenames in the map
+            let uniqueName = filename;
+            let counter = 1;
+            while (usedNames.has(uniqueName) || app.loadedFiles.has(uniqueName)) {
+                uniqueName = `${filename} (${counter++})`;
+            }
+            filename = uniqueName;
+            usedNames.add(filename);
+
             app.loadedFiles.set(filename, {
                 geometry: null,
                 object: null,
@@ -210,9 +229,13 @@ export function createSceneManager(app, ui) {
             fileData.loadingProgress = 0;
         });
         if (ui) ui.createFileCheckboxes();
-        app.plyFiles.forEach((filepath) => {
-            const filename = filepath.split('/').pop();
-            app.loaderManager.loadPLY(filepath, filename);
+        
+        // Iterate through loadedFiles instead of plyFiles array to ensure we use the correct keys (filenames)
+        // that were established in loadAllPLYFiles (checking for friendly names/deduplication)
+        app.loadedFiles.forEach((fileData, filename) => {
+            if (fileData.filepath) {
+                app.loaderManager.loadPLY(fileData.filepath, filename);
+            }
         });
     }
 
