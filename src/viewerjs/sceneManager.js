@@ -372,8 +372,12 @@ export function createSceneManager(app, ui) {
         const fileData = app.loadedFiles.get(filename);
         if (!fileData) return;
 
-        // Remove current object if exists
+        // Store transform from current object if exists
+        let oldPosition, oldRotation, oldScale;
         if (fileData.object) {
+            oldPosition = fileData.object.position.clone();
+            oldRotation = fileData.object.rotation.clone();
+            oldScale = fileData.object.scale.clone();
             app.scene.remove(fileData.object);
         }
 
@@ -404,6 +408,11 @@ export function createSceneManager(app, ui) {
                 app.scene.add(fillLight);
             }
         }
+
+        // Restore transform from old object
+        if (oldPosition) fileData.object.position.copy(oldPosition);
+        if (oldRotation) fileData.object.rotation.copy(oldRotation);
+        if (oldScale) fileData.object.scale.copy(oldScale);
 
         app.scene.add(fileData.object);
     }
@@ -450,9 +459,12 @@ export function createSceneManager(app, ui) {
             if (ui) ui.updateObjectLabelsUI();
             const pointCount = geometry.attributes.position.count.toLocaleString();
             console.log(`[${filename}] ${isPreview ? `Preview (${pointCount} points)` : `Complete (${pointCount} points)`}${wasDownsampled ? ' - downsampled' : ''}`);
-            if (!isPreview && app.selectedFile === filename) {
+            if (!isPreview && app.selectedFile === filename && app.currentMode === 'pan') {
                 const upgradedData = app.loadedFiles.get(filename);
                 if (upgradedData && upgradedData.object) {
+                    //Remove this line if we want to make a replaceable object
+                    app.transformControl.detach();
+                    //--------------------------------------------
                     app.transformControl.attach(upgradedData.object);
                     app.transformControl.enabled = true;
                     app.transformControl.visible = true;
@@ -541,22 +553,26 @@ export function createSceneManager(app, ui) {
                         clickedObject.material.needsUpdate = true;
                     }
                     
-                    // Attach transform controls and ensure they are visible
+                    // Attach transform controls only in Pan Mode
                     app.transformControl.detach(); // Detach first to ensure clean state
                     
-                    // Make sure object has proper matrix
-                    clickedObject.updateMatrixWorld(true);
-                    
-                    app.transformControl.attach(clickedObject);
-                    app.transformControl.enabled = true;
-                    app.transformControl.visible = true;
-                    
-                    // Switch to translate mode by default for easier moving
-                    app.transformControl.setMode('translate');
-                    
-                    console.log('[TransformControls] Attached to object:', filename);
-                    console.log('[TransformControls] Object:', clickedObject);
-                    console.log('[TransformControls] Mode:', app.transformControl.mode, 'Visible:', app.transformControl.visible, 'Enabled:', app.transformControl.enabled);
+                    if (app.currentMode === 'pan') {
+                        // Make sure object has proper matrix
+                        clickedObject.updateMatrixWorld(true);
+                        
+                        app.transformControl.attach(clickedObject);
+                        app.transformControl.enabled = true;
+                        app.transformControl.visible = true;
+                        
+                        // Switch to translate mode by default for easier moving
+                        app.transformControl.setMode('translate');
+                        
+                        console.log('[TransformControls] Attached to object:', filename);
+                        console.log('[TransformControls] Object:', clickedObject);
+                        console.log('[TransformControls] Mode:', app.transformControl.mode, 'Visible:', app.transformControl.visible, 'Enabled:', app.transformControl.enabled);
+                    } else {
+                        console.log('[TransformControls] Not attaching - current mode is:', app.currentMode, '(gizmo only works in Pan Mode)');
+                    }
                     
                     if (ui) ui.updateObjectLabelsUI();
                     const fd = app.loadedFiles.get(filename);
