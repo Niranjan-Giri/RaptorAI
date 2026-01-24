@@ -33,11 +33,10 @@ export function createSceneManager(app, ui) {
 
     app.controls = new OrbitControls(app.camera, app.renderer.domElement);
 
+    /*This is the main transform control logic.... we can modify stuffs below*/
+
     // Initialize TransformControls
     app.transformControl = new TransformControls(app.camera, app.renderer.domElement);
-    console.log('[SceneManager] TransformControls created:', app.transformControl);
-    console.log('[SceneManager] Is Object3D?', app.transformControl instanceof THREE.Object3D);
-    console.log('[SceneManager] TransformControls type:', app.transformControl.constructor.name);
     
     app.transformControl.setMode('translate'); // Default to translate mode
     app.transformControl.addEventListener('dragging-changed', function (event) {
@@ -57,12 +56,12 @@ export function createSceneManager(app, ui) {
         // Object is being transformed - this fires continuously during drag
         // The highlight box will be updated in the animate loop
     });
-    app.transformControl.setSize(1.5); // Make handles larger for easier grabbing
-    app.transformControl.setSpace('world'); // Use world space for more intuitive controls
+    app.transformControl.setSize(0.5);
+    app.transformControl.setSpace('world');
     
-    // In three.js r169+, TransformControls must be added using getHelper()
     app.scene.add(app.transformControl.getHelper());
-    
+    /************************************************************* */
+
     console.log('[SceneManager] TransformControls initialized and helper added to scene');
 
     app.raycaster = new THREE.Raycaster();
