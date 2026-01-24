@@ -39,7 +39,7 @@ export function initializeApp() {
     selectedFile: null,
     sceneInfo: null,
     highlightBoxes: new Map(),
-    currentMode: 'orbit',
+    currentMode: 'select',
   };
 
   // Instantiate managers
