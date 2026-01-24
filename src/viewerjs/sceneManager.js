@@ -57,7 +57,8 @@ export function createSceneManager(app, ui) {
         // The highlight box will be updated in the animate loop
     });
     app.transformControl.setSize(0.5);
-    app.transformControl.setSpace('world');
+    //Note: we can change this to world for global gizmo
+    app.transformControl.setSpace('local'); 
     
     app.scene.add(app.transformControl.getHelper());
     /************************************************************* */
