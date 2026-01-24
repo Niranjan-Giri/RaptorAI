@@ -26,6 +26,16 @@ export const fetchProcessedPointclouds = async () => {
           thumbnail: pcl.thumbnail,
           allUrls: flattenedUrls, // All URLs grouped by category
           processedDownloadUrls: pcl.processedDownloadUrls, // Keep original for reference
+          
+          // Helper: Flattened list of files with friendly names
+          // e.g. "bag1", "bag2" instead of "bag" array
+          files: Object.entries(pcl.processedDownloadUrls || {}).flatMap(([category, urls]) => {
+              const urlList = Array.isArray(urls) ? urls : [urls];
+              return urlList.map((url, index) => ({
+                  name: urlList.length > 1 ? `${category}${index + 1}` : category,
+                  url: url
+              }));
+          })
         };
       });
 

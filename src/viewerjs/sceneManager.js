@@ -33,12 +33,19 @@ export function createSceneManager(app, ui) {
 
     app.controls = new OrbitControls(app.camera, app.renderer.domElement);
 
+    /*This is the main transform control logic.... we can modify stuffs below*/
+
     // Initialize TransformControls
     app.transformControl = new TransformControls(app.camera, app.renderer.domElement);
+    
     app.transformControl.setMode('translate'); // Default to translate mode
     app.transformControl.addEventListener('dragging-changed', function (event) {
-        // Disable orbit controls while dragging
+        // Disable orbit controls while dragging the gizmo
         app.controls.enabled = !event.value;
+        
+        // Set transform flag when dragging starts/stops
+        app._isTransforming = event.value;
+        
         // Invalidate bbox cache when object is transformed
         if (!event.value && app.selectedFile) {
             const fileData = app.loadedFiles.get(app.selectedFile);
@@ -46,17 +53,40 @@ export function createSceneManager(app, ui) {
         }
     });
     app.transformControl.addEventListener('objectChange', function () {
-        // Mark that transform is happening for potential optimizations
-        app._isTransforming = true;
+        // Object is being transformed - this fires continuously during drag
+        // The highlight box will be updated in the animate loop
     });
-    app.scene.add(app.transformControl);
+    app.transformControl.setSize(0.5);
+    app.transformControl.setSpace('world');
+    
+    app.scene.add(app.transformControl.getHelper());
+    /************************************************************* */
+
+    console.log('[SceneManager] TransformControls initialized and helper added to scene');
 
     app.raycaster = new THREE.Raycaster();
-    app.raycaster.params.Points.threshold = 0.01;
+    app.raycaster.params.Points.threshold = 0.05; // Increase threshold for easier point cloud selection
     app.mouse = new THREE.Vector2();
 
     window.addEventListener('resize', onWindowResize);
-    app.renderer.domElement.addEventListener('click', onCanvasClick);
+    
+    // Track mouse down position to detect actual clicks vs drags
+    let mouseDownPos = null;
+    app.renderer.domElement.addEventListener('mousedown', (e) => {
+        mouseDownPos = { x: e.clientX, y: e.clientY };
+    });
+    app.renderer.domElement.addEventListener('mouseup', (e) => {
+        if (mouseDownPos) {
+            const dx = e.clientX - mouseDownPos.x;
+            const dy = e.clientY - mouseDownPos.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            // Only treat as click if mouse moved less than 5 pixels
+            if (distance < 5) {
+                onCanvasClick(e);
+            }
+        }
+        mouseDownPos = null;
+    });
     app.renderer.domElement.addEventListener('mousemove', () => { if (ui) ui.updateInfoIconPosition(); });
     window.addEventListener('keydown', onKeyDown);
 
@@ -136,7 +166,7 @@ export function createSceneManager(app, ui) {
     }
 
     function onKeyDown(event) {
-        if (!app.selectedFile || app.currentMode !== 'select') return;
+        if (!app.selectedFile) return;
         switch (event.key.toLowerCase()) {
             case 'g': // Translate
             case 't':
@@ -162,9 +192,50 @@ export function createSceneManager(app, ui) {
         // Throttle info icon updates - only update every 2 frames (30fps max)
         if (!app._frameCounter) app._frameCounter = 0;
         app._frameCounter++;
-        if (app._frameCounter % 2 === 0 && app.selectedFile && ui) {
-            ui.updateInfoIconPosition();
+        
+        // Update both Info Icon AND Highlight Box position if an object is selected
+        if (app.selectedFile) {
+            const fileData = app.loadedFiles.get(app.selectedFile);
+            
+            // Sync Highlight Box position with Object position
+            if (fileData && fileData.object && app.highlightBoxes) {
+                // Get the main highlight box mesh
+                const boxMesh = app.highlightBoxes.get(app.selectedFile) || app.highlightBoxes.get(app.selectedFile + ':outline');
+                
+                if (boxMesh) {
+                    // Recompute world center of the object
+                    if (!fileData.geometry.boundingBox) fileData.geometry.computeBoundingBox();
+                    
+                    // We need to apply the object's current World Matrix to the center of its local bounding box
+                    // to find where the box should be in World Space.
+                    const localCenter = new THREE.Vector3();
+                    fileData.geometry.boundingBox.getCenter(localCenter);
+                    
+                    // Transform local center to world space
+                    const worldCenter = localCenter.clone().applyMatrix4(fileData.object.matrixWorld);
+                    
+                    // Apply rotation and scale if needed, but for an AABB highlight we usually just follow position
+                    // Ideally, the highlight box should match the object's transform.
+                    // Simple approach: Set box position to object's world center
+                    
+                    // Note: This assumes the HighlightBox was created axis-aligned in World Space. 
+                    // If we rotate the object, the AABB naturally changes, but our BoxGeometry is static.
+                    // For a true OBB (Oriented Bounding Box), we should copy position/quaternion.
+                    // For now, let's copy position to strictly follow the drag.
+                    
+                    const currentBox = app.highlightBoxes.get(app.selectedFile);
+                    const currentOutline = app.highlightBoxes.get(app.selectedFile + ':outline');
+
+                    if (currentBox) currentBox.position.copy(worldCenter);
+                    if (currentOutline) currentOutline.position.copy(worldCenter);
+                }
+            }
+
+            if (app._frameCounter % 2 === 0 && ui) {
+                ui.updateInfoIconPosition();
+            }
         }
+        
         // Update highlight label positions/frame dependent UI
         if (ui && ui.updateFrameDependentUI) ui.updateFrameDependentUI();
     }
@@ -172,8 +243,27 @@ export function createSceneManager(app, ui) {
     function loadAllPLYFiles() {
         // starts loading files and initial UI updates
         console.log('[SceneManager] Starting to load PLY files...');
-        app.plyFiles.forEach((filepath) => {
-            const filename = filepath.split('/').pop();
+        
+        // Clear duplicates map for this load session to handle unrelated files with same name
+        const usedNames = new Set();
+        
+        app.plyFiles.forEach((filepath, index) => {
+            let filename = filepath.split('/').pop();
+            
+            // Use friendly name if available (passed from Viewer/index.jsx)
+            if (app.plyFileNames && app.plyFileNames[index]) {
+                filename = app.plyFileNames[index];
+            }
+            
+            // Ensure unique filenames in the map
+            let uniqueName = filename;
+            let counter = 1;
+            while (usedNames.has(uniqueName) || app.loadedFiles.has(uniqueName)) {
+                uniqueName = `${filename} (${counter++})`;
+            }
+            filename = uniqueName;
+            usedNames.add(filename);
+
             app.loadedFiles.set(filename, {
                 geometry: null,
                 object: null,
@@ -210,9 +300,13 @@ export function createSceneManager(app, ui) {
             fileData.loadingProgress = 0;
         });
         if (ui) ui.createFileCheckboxes();
-        app.plyFiles.forEach((filepath) => {
-            const filename = filepath.split('/').pop();
-            app.loaderManager.loadPLY(filepath, filename);
+        
+        // Iterate through loadedFiles instead of plyFiles array to ensure we use the correct keys (filenames)
+        // that were established in loadAllPLYFiles (checking for friendly names/deduplication)
+        app.loadedFiles.forEach((fileData, filename) => {
+            if (fileData.filepath) {
+                app.loaderManager.loadPLY(fileData.filepath, filename);
+            }
         });
     }
 
@@ -402,17 +496,32 @@ export function createSceneManager(app, ui) {
     }
 
     function onCanvasClick(event) {
-        if (app.currentMode !== 'select') return;
+        console.log('[Click] Click detected at', event.clientX, event.clientY);
+        
+        // Don't select if we're actively dragging the gizmo
+        if (app._isTransforming) {
+            console.log('[Click] Ignoring - currently transforming');
+            return;
+        }
+
         app.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
         app.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
         app.raycaster.setFromCamera(app.mouse, app.camera);
+        
         const objectsToCheck = [];
         app.loadedFiles.forEach((fileData) => {
             if (fileData.object && fileData.visible) objectsToCheck.push(fileData.object);
         });
+        
+        // Use recursive=true if objects might be groups, but for PLY meshes usually false is fine. 
+        // Using false for performance unless structure changes.
         const intersects = app.raycaster.intersectObjects(objectsToCheck, false);
+        
+        console.log('[Click] Intersects found:', intersects.length, 'Objects checked:', objectsToCheck.length);
+        
         if (intersects.length > 0) {
             const clickedObject = intersects[0].object;
+            console.log('[Click] Object clicked');
             if (app.selectedFile) {
                 const prevData = app.loadedFiles.get(app.selectedFile);
                 if (prevData && prevData.object && app.renderMode === 'points') {
@@ -425,15 +534,30 @@ export function createSceneManager(app, ui) {
                 if (fileData.object === clickedObject) {
                     app.selectedFile = filename;
                     console.log('Selected file:', filename);
-                    console.log('Selected point:', intersects[0].point);
+                    
                     if (app.renderMode === 'points') {
                         clickedObject.material.vertexColors = false;
                         clickedObject.material.color.set(0xffffff);
                         clickedObject.material.needsUpdate = true;
                     }
+                    
+                    // Attach transform controls and ensure they are visible
+                    app.transformControl.detach(); // Detach first to ensure clean state
+                    
+                    // Make sure object has proper matrix
+                    clickedObject.updateMatrixWorld(true);
+                    
                     app.transformControl.attach(clickedObject);
                     app.transformControl.enabled = true;
                     app.transformControl.visible = true;
+                    
+                    // Switch to translate mode by default for easier moving
+                    app.transformControl.setMode('translate');
+                    
+                    console.log('[TransformControls] Attached to object:', filename);
+                    console.log('[TransformControls] Object:', clickedObject);
+                    console.log('[TransformControls] Mode:', app.transformControl.mode, 'Visible:', app.transformControl.visible, 'Enabled:', app.transformControl.enabled);
+                    
                     if (ui) ui.updateObjectLabelsUI();
                     const fd = app.loadedFiles.get(filename);
                     if (fd && fd.geometry) {
@@ -446,6 +570,9 @@ export function createSceneManager(app, ui) {
                 }
             }
         } else {
+            // Only deselect if we didn't click on the transform controls (difficult to check directly here, 
+            // but usually transform controls consume the event if interacted with).
+            // However, if we click empty space, we should deselect.
             deselectFile();
         }
     }

@@ -9,6 +9,23 @@ const Viewer = () => {
   const { projectName, processedDownloadUrls } = location.state || {};
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(window.innerWidth > 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 768) {
+        setIsMenuOpen(false);
+      } else {
+        setIsMenuOpen(true);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    // Initial check
+    handleResize();
+    
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   useEffect(() => {
     // Small delay to ensure canvas-container is in the DOM
@@ -91,23 +108,28 @@ const Viewer = () => {
           }else if(processedDownloadUrls && Object.keys(processedDownloadUrls).length > 0){
             // Load from processed download URLs (project clicked)
             setIsLoading(true);
-                        
-            // Transform processedDownloadUrls into labeled array
-            const plyFilesWithNames = [];
-            const plyUrls = [];
             
-            Object.entries(processedDownloadUrls).forEach(([category, urls]) => {
-              const urlArray = Array.isArray(urls) ? urls : [urls];
-              urlArray.forEach((url, index) => {
-                const name = urlArray.length > 1 ? `${category} ${index}` : category;
-                plyFilesWithNames.push({ name, url });
-                plyUrls.push(url);
-              });
-            });
+            // Use the pre-calculated 'files' list from pointcloudService if available, 
+            // otherwise fallback to generating it here (legacy support)
+            let filesToLoad = [];
+            
+            // Check if we have the new 'files' structure in location.state (assuming passed from Projects)
+            if (location.state && location.state.files) {
+                 filesToLoad = location.state.files;
+            } else {
+                // Fallback generation (bag1, bag2 style)
+                Object.entries(processedDownloadUrls).forEach(([category, urls]) => {
+                  const urlArray = Array.isArray(urls) ? urls : [urls];
+                  urlArray.forEach((url, index) => {
+                    const name = urlArray.length > 1 ? `${category}${index + 1}` : category;
+                    filesToLoad.push({ name, url });
+                  });
+                });
+            }
                         
             // Set the PLY files and names
-            app.plyFiles = plyUrls;
-            app.plyFileNames = plyFilesWithNames.map(f => f.name);
+            app.plyFiles = filesToLoad.map(f => f.url);
+            app.plyFileNames = filesToLoad.map(f => f.name);
             
             // Clear previously loaded files from the scene
             app.loadedFiles.forEach((fileData) => {
@@ -255,7 +277,22 @@ const Viewer = () => {
         </button>
       </div>
 
-      <div id="control-menu">
+      <button 
+        id="menu-toggle-btn" 
+        className={isMenuOpen ? 'active' : ''} 
+        onClick={() => setIsMenuOpen(!isMenuOpen)}
+        title={isMenuOpen ? "Close Menu" : "Open Menu"}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          {isMenuOpen ? (
+            <path d="M18 6L6 18M6 6l12 12" />
+          ) : (
+            <path d="M3 12h18M3 6h18M3 18h18" />
+          )}
+        </svg>
+      </button>
+
+      <div id="control-menu" className={isMenuOpen ? 'open' : 'closed'}>
         <div className="control-group">
           <div className="control-label">RENDER MODE</div>
           <button className="control-btn active" id="btn-point-cloud">
