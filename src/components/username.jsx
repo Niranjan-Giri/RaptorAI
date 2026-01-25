@@ -1,10 +1,14 @@
 import { USER_INFO } from "../constants";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { SettingsIcon, HomeIcon, X } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import NotFound from "../pages/NotFound";
 import { handleLogout } from "../js/logout";
 import { fetchProcessedPointclouds } from "../js/pointcloudService";
+import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+gsap.registerPlugin(ScrollTrigger);
 export const EXAMPLE_PLY_FILES = [
   {
     id: 1,
@@ -34,6 +38,11 @@ export function Username() {
   const [showSettings, setShowSettings] = useState(false);
   const [projects, setProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  
+  // Refs for parallax effect
+  const bannerRef = useRef(null);
+  const profileImageRef = useRef(null);
+  const profileInfoRef = useRef(null);
 
   useEffect(() => {
     console.log("[Profile] Component mounted, checking auth");
@@ -84,6 +93,61 @@ export function Username() {
     }
   };
 
+  // Parallax effect with GSAP ScrollTrigger
+  useEffect(() => {
+    if (!isValid || !bannerRef.current) return;
+
+    // Banner 3D parallax - zoom, rotate, and move with perspective
+    gsap.to(bannerRef.current, {
+      yPercent: 40,
+      scale: 1.2,
+      rotateX: -15,
+      transformOrigin: "center top",
+      ease: "none",
+      scrollTrigger: {
+        trigger: bannerRef.current,
+        start: "top top",
+        end: "bottom top",
+        scrub: 1,
+      },
+    });
+
+    // Profile image - faster movement with scale effect
+    if (profileImageRef.current) {
+      gsap.to(profileImageRef.current, {
+        y: -50,
+        scale: 1.1,
+        rotateZ: -5,
+        ease: "none",
+        scrollTrigger: {
+          trigger: bannerRef.current,
+          start: "top top",
+          end: "bottom top",
+          scrub: 1.5,
+        },
+      });
+    }
+
+    // Profile info - subtle upward movement
+    if (profileInfoRef.current) {
+      gsap.to(profileInfoRef.current, {
+        y: -80,
+        opacity: 0.3,
+        ease: "none",
+        scrollTrigger: {
+          trigger: bannerRef.current,
+          start: "top top",
+          end: "bottom top",
+          scrub: 2,
+        },
+      });
+    }
+
+    return () => {
+      ScrollTrigger.getAll().forEach(trigger => trigger.kill());
+    };
+  }, [isValid]);
+
   const handleLoadExample = (example) => {
     // Navigate to viewer with example name
     navigate(`/viewer?example=${example.name}`);
@@ -112,21 +176,31 @@ export function Username() {
   return (
     <div className="min-h-screen bg-gray-900 overflow-y-auto">
       {/* Banner Section */}
-      <div className="relative">
+      <div className="relative overflow-hidden" style={{ perspective: '1000px' }}>
         {/* Banner Background */}
-        <div className="h-100 bg-black"></div>
+        <div 
+          ref={bannerRef} 
+          className="h-100 bg-cover bg-center relative"
+          style={{
+            backgroundImage: 'url(/images/profile-bg1.jpeg)',
+            transformStyle: 'preserve-3d',
+          }}
+        >
+          {/* Overlay for better text visibility */}
+          <div className="absolute inset-0 bg-black/30"></div>
+        </div>
         {/* Profile Section */}
         <div className="relative px-8 pb-8">
           {/* Profile Picture positioned over banner */}
           <div className="flex items-end -mt-24 mb-4">
-            <div className="relative">
+            <div ref={profileImageRef} className="relative">
               <img
                 src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${userInfo?.username}`}
                 alt="Profile"
                 className="w-40 h-40 rounded-full border-4 border-gray-900 shadow-lg bg-white"
               />
             </div>
-            <div className="ml-6 mb-2">
+            <div ref={profileInfoRef} className="ml-6 mb-2">
               <h1 className="text-4xl font-bold text-white">
                 {userInfo?.username}
               </h1>
