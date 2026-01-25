@@ -266,6 +266,14 @@ export function createUIManager(app, sceneManager, queryHandler) {
         app.currentMode = mode;
         // Only remove active from icon-btn (tool mode buttons), not control-btn (other control groups)
         document.querySelectorAll('.icon-btn').forEach(btn => btn.classList.remove('active'));
+        
+        // Hide gizmo when switching away from pan mode
+        if (mode !== 'pan' && app.transformControl) {
+            app.transformControl.detach();
+            app.transformControl.enabled = false;
+            app.transformControl.visible = false;
+        }
+        
         if (mode === 'orbit') {
             document.getElementById('btn-orbit')?.classList.add('active'); app.controls.enableRotate = true; app.controls.enablePan = false; app.controls.enabled = true; app.deselectFile && app.deselectFile(); app.renderer.domElement.style.cursor = 'grab';
         } else if (mode === 'pan') {

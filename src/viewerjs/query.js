@@ -177,11 +177,22 @@ export function createQueryHandler(app, sceneManager, ui) {
             - To zoom out of the scene: [ACTION:ZOOM_OUT]
             - To show/add an object: [ACTION:SHOW:'filename.ply']
             - To hide/remove an object: [ACTION:HIDE:'filename.ply']
+            - To move an object relatively: [ACTION:MOVE:'filename.ply':'direction':amount]
+              Directions: left, right, up, down, forward, back
+              Amount: numeric value (e.g., 1.5, 2, 0.5)
+              Example: [ACTION:MOVE:'B3_S4.ply':'left':2]
+            - To move an object to absolute position: [ACTION:POSITION:'filename.ply':x:y:z]
+              Example: [ACTION:POSITION:'B3_S4.ply':1.5:0:0]
+            - To rotate an object: [ACTION:ROTATE:'filename.ply':'axis':degrees]
+              Axis: x, y, z
+              Example: [ACTION:ROTATE:'B3_S4.ply':'y':90]
 
             RULES:
             - If the question asks to highlight or find an object, provide the exact filename in your response so the user knows.
             - If the question asks for distance, look at the 'calculated_distances' array.
-            - If you mention a filename, put it in single quotes like 'filename.ply'.`;
+            - If you mention a filename, put it in single quotes like 'filename.ply'.
+            - When asked to move objects, use the appropriate ACTION code.
+            - For relative movements (left, right, etc.), use reasonable default amounts like 1 or 2 units if not specified.`;
             /****************************************************************** */
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
             console.log('[Gemini] Request URL:', url.replace(GEMINI_API_KEY, 'HIDDEN'));
@@ -307,6 +318,96 @@ export function createQueryHandler(app, sceneManager, ui) {
                             if (ui && ui.createFileCheckboxes) ui.createFileCheckboxes();
                         }
                         userDisplayMessage = userDisplayMessage.replace(showMatch[0], '');
+                    }
+
+                    // Check for MOVE object (relative)
+                    const moveMatch = rawAnswer.match(/\[ACTION:MOVE:'(.*?)':'(.*?)':([-\d.]+)\]/);
+                    if (moveMatch && moveMatch[1] && moveMatch[2] && moveMatch[3]) {
+                        const filename = moveMatch[1];
+                        const direction = moveMatch[2].toLowerCase();
+                        const amount = parseFloat(moveMatch[3]);
+                        console.log('[Gemini Action] Move:', filename, direction, amount);
+                        
+                        const fileData = app.loadedFiles.get(filename);
+                        if (fileData && fileData.object) {
+                            const obj = fileData.object;
+                            switch (direction) {
+                                case 'left':
+                                    obj.position.x -= amount;
+                                    break;
+                                case 'right':
+                                    obj.position.x += amount;
+                                    break;
+                                case 'up':
+                                    obj.position.y += amount;
+                                    break;
+                                case 'down':
+                                    obj.position.y -= amount;
+                                    break;
+                                case 'forward':
+                                    obj.position.z -= amount;
+                                    break;
+                                case 'back':
+                                    obj.position.z += amount;
+                                    break;
+                            }
+                            obj.updateMatrixWorld(true);
+                            // Invalidate bbox cache
+                            fileData._cachedBBox = null;
+                            console.log('[Gemini Action] New position:', obj.position);
+                        }
+                        userDisplayMessage = userDisplayMessage.replace(moveMatch[0], '');
+                    }
+
+                    // Check for POSITION object (absolute)
+                    const posMatch = rawAnswer.match(/\[ACTION:POSITION:'(.*?)':([-\d.]+):([-\d.]+):([-\d.]+)\]/);
+                    if (posMatch && posMatch[1]) {
+                        const filename = posMatch[1];
+                        const x = parseFloat(posMatch[2]);
+                        const y = parseFloat(posMatch[3]);
+                        const z = parseFloat(posMatch[4]);
+                        console.log('[Gemini Action] Position:', filename, { x, y, z });
+                        
+                        const fileData = app.loadedFiles.get(filename);
+                        if (fileData && fileData.object) {
+                            fileData.object.position.set(x, y, z);
+                            fileData.object.updateMatrixWorld(true);
+                            // Invalidate bbox cache
+                            fileData._cachedBBox = null;
+                            console.log('[Gemini Action] New position:', fileData.object.position);
+                        }
+                        userDisplayMessage = userDisplayMessage.replace(posMatch[0], '');
+                    }
+
+                    // Check for ROTATE object
+                    const rotateMatch = rawAnswer.match(/\[ACTION:ROTATE:'(.*?)':'(.*?)':([-\d.]+)\]/);
+                    if (rotateMatch && rotateMatch[1] && rotateMatch[2] && rotateMatch[3]) {
+                        const filename = rotateMatch[1];
+                        const axis = rotateMatch[2].toLowerCase();
+                        const degrees = parseFloat(rotateMatch[3]);
+                        const radians = (degrees * Math.PI) / 180;
+                        console.log('[Gemini Action] Rotate:', filename, axis, degrees);
+                        
+                        const fileData = app.loadedFiles.get(filename);
+                        if (fileData && fileData.object) {
+                            const obj = fileData.object;
+                            switch (axis) {
+                                case 'x':
+                                    obj.rotation.x += radians;
+                                    break;
+                                case 'y':
+                                    obj.rotation.y += radians;
+                                    break;
+                                case 'z':
+                                    obj.rotation.z += radians;
+                                    break;
+                            }
+                            obj.updateMatrixWorld(true);
+                            // Invalidate bbox cache
+                            fileData._cachedBBox = null;
+                            console.log('[Gemini Action] New rotation:', obj.rotation);
+                        }
+                        userDisplayMessage = userDisplayMessage.replace(rotateMatch[0], '');
                     }
                     
                     // Display cleaned message
