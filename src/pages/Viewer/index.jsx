@@ -61,13 +61,15 @@ const Viewer = () => {
           const exampleName = searchParams.get('example');
           const pointcloudId = searchParams.get('pointcloudId');
           
-          if (exampleName && EXAMPLE_PLY_FILES.some(ex => ex.name === exampleName)) {
-            const selectedPlyUrl = EXAMPLE_PLY_FILES.find(ex => ex.name === exampleName).plyUrl;            
-            // Show loading screen
+          // Check if files were passed from location.state (example or project)
+          if (location.state && location.state.files && location.state.files.length > 0) {
             setIsLoading(true);
             
-            // Replace default PLY files with the selected one
-            app.plyFiles = [selectedPlyUrl];
+            const filesToLoad = location.state.files;
+            
+            // Set the PLY files and names
+            app.plyFiles = filesToLoad.map(f => f.url);
+            app.plyFileNames = filesToLoad.map(f => f.name);
             
             // Clear previously loaded files from the scene
             app.loadedFiles.forEach((fileData) => {
@@ -92,21 +94,20 @@ const Viewer = () => {
               app.loaderManager.cancelAll();
             }
             
-            // Load the selected PLY file
+            // Load all PLY files
             if (app.sceneManager && typeof app.sceneManager.loadAllPLYFiles === 'function') {
               app.sceneManager.loadAllPLYFiles();
               
-              // Frame the objects after a short delay to ensure they're loaded
+              // Frame the objects after a short delay
               setTimeout(() => {
                 if (app.sceneManager && typeof app.sceneManager.frameAllObjects === 'function') {
                   console.log('[Viewer] Framing loaded objects');
                   app.sceneManager.frameAllObjects(1000);
                 }
-                // Hide loading screen when done
                 setIsLoading(false);
               }, 500);
             }
-          }else if(processedDownloadUrls && Object.keys(processedDownloadUrls).length > 0){
+          } else if(processedDownloadUrls && Object.keys(processedDownloadUrls).length > 0){
             // Load from processed download URLs (project clicked)
             setIsLoading(true);
             
