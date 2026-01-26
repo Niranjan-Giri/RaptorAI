@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { useSearchParams, useLocation } from "react-router-dom";
+import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import "./style.css";
 import { initializeApp } from "../../viewerjs/app.entry.js";
 import { EXAMPLE_PLY_FILES } from "../../components/username.jsx";
 import api from "../../api";
 const Viewer = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { projectName, processedDownloadUrls } = location.state || {};
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
@@ -276,7 +277,7 @@ const Viewer = () => {
           </svg>
         </button>
       </div>
-
+      
       <button 
         id="menu-toggle-btn" 
         className={isMenuOpen ? 'active' : ''} 
@@ -293,6 +294,16 @@ const Viewer = () => {
       </button>
 
       <div id="control-menu" className={isMenuOpen ? 'open' : 'closed'}>
+        <button 
+          id="back-btn" 
+          onClick={() => navigate(-1)}
+          title="Go Back"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+        </button>
+        
         <div className="control-group">
           <div className="control-label">RENDER MODE</div>
           <button className="control-btn active" id="btn-point-cloud">
