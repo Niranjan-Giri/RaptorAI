@@ -351,7 +351,7 @@ export default function Home() {
                       </span>
                     </button>
                   </a>
-                </div>
+                </div>  
               </div>
             </div>
           </div>
