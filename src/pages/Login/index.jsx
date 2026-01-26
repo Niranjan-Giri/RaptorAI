@@ -48,7 +48,7 @@ export default function Login() {
         };
         localStorage.setItem(USER_INFO, JSON.stringify(userInfo));
         localStorage.setItem('isLoggedIn', 'true');
-        navigate('/');
+        navigate(`/${userInfo.username}`);
       }
     } catch (err) {
       setError('Invalid username or password');
