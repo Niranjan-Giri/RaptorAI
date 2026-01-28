@@ -13,8 +13,8 @@ gsap.registerPlugin(ScrollTrigger);
 export const EXAMPLE_PLY_FILES = [
   {
     id: 1,
-    name: "Room 101",
-    description: "Butler Room 101",
+    name: "Room 212",
+    description: "Butler Room 212",
     thumbnail: "/images/room101.png",
     bucketUrl: "https://storage.googleapis.com/examples_ply/room_101/",
     plyFiles: [
