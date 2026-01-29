@@ -80,7 +80,7 @@ export function createUIManager(app, sceneManager, queryHandler) {
         <h2 style="margin-top:0; color: #4CAF50; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">Object Information</h2>
         <div style="line-height: 1.8; color: #fff;">
             <p><strong style="color: #2196F3;">File Name:</strong> ${app.selectedFile}</p>
-            <p><strong style="color: #2196F3;">File Path:</strong> ${fileData.filepath}</p>
+            <!-- <p><strong style="color: #2196F3;">File Path:</strong> ${fileData.filepath}</p> -->
             <p><strong style="color: #2196F3;">Render Mode:</strong> ${app.renderMode === 'points' ? 'Point Cloud' : '3D Mesh'}</p>
             <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 15px 0;">
             <h3 style="color: #FF9800; margin-bottom: 10px;">Geometry</h3>
