@@ -15,7 +15,7 @@ import { USER_INFO } from "../../constants";
 import { useNavigate } from "react-router-dom";
 const navigation = [
   { name: "Home", href: "/", current: true },
-  { name: "Viewer", href: "/viewer", current: false },
+  // { name: "Viewer", href: "/viewer", current: false },
 ];
 
 function classNames(...classes) {
@@ -82,7 +82,7 @@ export default function Home() {
                           item.current
                             ? "bg-gray-950/50 text-white"
                             : "text-gray-300 hover:bg-white/5 hover:text-white",
-                          "rounded-md px-3 py-2 text-sm font-medium"
+                          "rounded-md px-3 py-2 text-sm font-medium",
                         )}
                       >
                         {item.name}
@@ -174,7 +174,7 @@ export default function Home() {
                     item.current
                       ? "bg-gray-950/50 text-white"
                       : "text-gray-300 hover:bg-white/5 hover:text-white",
-                    "block rounded-md px-3 py-2 text-base font-medium"
+                    "block rounded-md px-3 py-2 text-base font-medium",
                   )}
                 >
                   {item.name}
@@ -324,11 +324,13 @@ export default function Home() {
               </svg>
               <div className="container mx-auto flex flex-col justify-around p-4 text-center md:p-10 lg:flex-row">
                 <div className="flex flex-col justify-center lg:text-left">
-                  <p className="mb-1 text-sm font-medium tracking-widest uppercase text-gray-600">
-                    Small description of your app
+                  <p className="mb-1 text-sm font-medium tracking-widest uppercase text-white">
+                    Digitize your world, one point at a time. <br />
+                    With RaptorTwin, Scan your environment to visualize later
+                    into pointclouds.
                   </p>
                   <h1 className="py-2 text-3xl font-medium leading-tight title-font text-white sm:text-4xl">
-                    Your app name
+                    RaptorTwin
                   </h1>
                 </div>
                 <div className="flex flex-col items-center justify-center flex-shrink-0 mt-6 space-y-4 sm:flex-row sm:space-y-0 sm:space-x-4 lg:ml-4 lg:mt-0 lg:justify-end">
@@ -349,7 +351,7 @@ export default function Home() {
                       </span>
                     </button>
                   </a>
-                </div>
+                </div>  
               </div>
             </div>
           </div>

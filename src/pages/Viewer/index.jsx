@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { useSearchParams, useLocation } from "react-router-dom";
+import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import "./style.css";
 import { initializeApp } from "../../viewerjs/app.entry.js";
 import { EXAMPLE_PLY_FILES } from "../../components/username.jsx";
 import api from "../../api";
 const Viewer = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { projectName, processedDownloadUrls } = location.state || {};
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
@@ -60,13 +61,15 @@ const Viewer = () => {
           const exampleName = searchParams.get('example');
           const pointcloudId = searchParams.get('pointcloudId');
           
-          if (exampleName && EXAMPLE_PLY_FILES.some(ex => ex.name === exampleName)) {
-            const selectedPlyUrl = EXAMPLE_PLY_FILES.find(ex => ex.name === exampleName).plyUrl;            
-            // Show loading screen
+          // Check if files were passed from location.state (example or project)
+          if (location.state && location.state.files && location.state.files.length > 0) {
             setIsLoading(true);
             
-            // Replace default PLY files with the selected one
-            app.plyFiles = [selectedPlyUrl];
+            const filesToLoad = location.state.files;
+            
+            // Set the PLY files and names
+            app.plyFiles = filesToLoad.map(f => f.url);
+            app.plyFileNames = filesToLoad.map(f => f.name);
             
             // Clear previously loaded files from the scene
             app.loadedFiles.forEach((fileData) => {
@@ -91,21 +94,20 @@ const Viewer = () => {
               app.loaderManager.cancelAll();
             }
             
-            // Load the selected PLY file
+            // Load all PLY files
             if (app.sceneManager && typeof app.sceneManager.loadAllPLYFiles === 'function') {
               app.sceneManager.loadAllPLYFiles();
               
-              // Frame the objects after a short delay to ensure they're loaded
+              // Frame the objects after a short delay
               setTimeout(() => {
                 if (app.sceneManager && typeof app.sceneManager.frameAllObjects === 'function') {
                   console.log('[Viewer] Framing loaded objects');
                   app.sceneManager.frameAllObjects(1000);
                 }
-                // Hide loading screen when done
                 setIsLoading(false);
               }, 500);
             }
-          }else if(processedDownloadUrls && Object.keys(processedDownloadUrls).length > 0){
+          } else if(processedDownloadUrls && Object.keys(processedDownloadUrls).length > 0){
             // Load from processed download URLs (project clicked)
             setIsLoading(true);
             
@@ -276,7 +278,7 @@ const Viewer = () => {
           </svg>
         </button>
       </div>
-
+      
       <button 
         id="menu-toggle-btn" 
         className={isMenuOpen ? 'active' : ''} 
@@ -293,6 +295,16 @@ const Viewer = () => {
       </button>
 
       <div id="control-menu" className={isMenuOpen ? 'open' : 'closed'}>
+        <button 
+          id="back-btn" 
+          onClick={() => navigate(-1)}
+          title="Go Back"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+        </button>
+        
         <div className="control-group">
           <div className="control-label">RENDER MODE</div>
           <button className="control-btn active" id="btn-point-cloud">

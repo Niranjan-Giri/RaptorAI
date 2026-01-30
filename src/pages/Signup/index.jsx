@@ -59,7 +59,7 @@ export default function Signup() {
             };
             localStorage.setItem(USER_INFO, JSON.stringify(userInfo));
             localStorage.setItem("isLoggedIn", "true");
-            navigate('/');
+          navigate(`/${userInfo.username}`);
           }
         } catch (loginErr) {
           // If auto-login fails, redirect to login page

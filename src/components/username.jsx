@@ -9,24 +9,54 @@ import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 gsap.registerPlugin(ScrollTrigger);
+
 export const EXAMPLE_PLY_FILES = [
   {
     id: 1,
-    name: "B3_S4",
-    description: "Building 3 Sample 4",
-    plyUrl: "https://storage.googleapis.com/examples_ply/B3_S4.ply",
-  },
-  {
-    id: 2,
-    name: "B3_S2",
-    description: "Building 3 Sample 2",
-    plyUrl: "https://storage.googleapis.com/examples_ply/B3_S2.ply",
-  },
-  {
-    id: 3,
-    name: "B3_S5",
-    description: "Building 3 Sample 5",
-    plyUrl: "https://storage.googleapis.com/examples_ply/B3_S5.ply",
+    name: "Room 212",
+    description: "Butler Room 212",
+    thumbnail: "/images/room101.png",
+    bucketUrl: "https://storage.googleapis.com/examples_ply/room_101/",
+    plyFiles: [
+      "bookshelf_1",
+      "ceiling light_1",
+      "ceiling light_2",
+      "ceiling light_3",
+      "ceiling light_4",
+      "ceiling light_5",
+      "ceiling",
+      "computer box_1",
+      "computer box_2",
+      "computer box_3",
+      "computer keyboard_1",
+      "computer keyboard_2",
+      "computer keyboard_3",
+      "computer keyboard_4",
+      "computer keyboard_5",
+      "computer monitor_1",
+      "computer monitor_2",
+      "computer monitor_3",
+      "floor",
+      "office chair_1",
+      "office chair_2",
+      "office chair_3",
+      "office chair_4",
+      "office chair_5",
+      "office chair_6",
+      "office chair_7",
+      "office chair_8",
+      "office chair_9",
+      "table_1",
+      "table_2",
+      "table_3",
+      "table_4",
+      "unlabeled",
+      "wall_1",
+      "wall_2",
+      "wall_3",
+      "wall_4",
+      "wall_5",
+    ],
   },
 ];
 
@@ -38,7 +68,7 @@ export function Username() {
   const [showSettings, setShowSettings] = useState(false);
   const [projects, setProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
-  
+
   // Refs for parallax effect
   const bannerRef = useRef(null);
   const profileImageRef = useRef(null);
@@ -49,11 +79,11 @@ export function Username() {
     const stored = localStorage.getItem(USER_INFO);
     console.log(
       "[Profile] User info from storage:",
-      stored ? JSON.parse(stored) : "none"
+      stored ? JSON.parse(stored) : "none",
     );
     console.log(
       "[Profile] JWT token exists:",
-      !!localStorage.getItem("jwtToken")
+      !!localStorage.getItem("jwtToken"),
     );
 
     if (stored) {
@@ -144,13 +174,28 @@ export function Username() {
     }
 
     return () => {
-      ScrollTrigger.getAll().forEach(trigger => trigger.kill());
+      ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
     };
   }, [isValid]);
 
   const handleLoadExample = (example) => {
-    // Navigate to viewer with example name
-    navigate(`/viewer?example=${example.name}`);
+    // Navigate to viewer with example bucket
+    const files = example.plyFiles.map((fileName, index) => {
+      const url = `${example.bucketUrl}${encodeURIComponent(fileName)}.ply`;
+      return {
+        name: fileName.replace(/ /g, "_"),
+        url: url,
+      };
+    });
+    console.log("Generated files:", files);
+
+    navigate(`/viewer?example=${example.name}`, {
+      state: {
+        projectName: example.name,
+        files: files,
+        isExample: true,
+      },
+    });
   };
 
   const handleLoadProjects = (project) => {
@@ -176,14 +221,17 @@ export function Username() {
   return (
     <div className="min-h-screen bg-gray-900 overflow-y-auto">
       {/* Banner Section */}
-      <div className="relative overflow-hidden" style={{ perspective: '1000px' }}>
+      <div
+        className="relative overflow-hidden"
+        style={{ perspective: "1000px" }}
+      >
         {/* Banner Background */}
-        <div 
-          ref={bannerRef} 
+        <div
+          ref={bannerRef}
           className="h-100 bg-cover bg-center relative"
           style={{
-            backgroundImage: 'url(/images/profile-bg1.jpeg)',
-            transformStyle: 'preserve-3d',
+            backgroundImage: "url(/images/profile-bg1.jpeg)",
+            transformStyle: "preserve-3d",
           }}
         >
           {/* Overlay for better text visibility */}
@@ -223,16 +271,20 @@ export function Username() {
                 className="bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all p-6 cursor-pointer border border-gray-700 hover:border-blue-500 hover:scale-105"
               >
                 <div
-                  className="h-48 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg mb-4 flex items-center justify-center bg-cover bg-center"
+                  className="h-48 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg mb-4 flex flex-col items-center justify-center relative overflow-hidden bg-cover bg-center"
                   style={{
-                    backgroundImage: `url(/images/${example.name}.png)`,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
+                    backgroundImage: `url(${example.thumbnail})`,
                   }}
                 >
-                  <span className="text-white font-semibold text-center px-4 bg-black/40 py-2 rounded">
-                    {example.name}
-                  </span>
+                  <div className="absolute inset-0 bg-black/40"></div>
+                  <div className="relative z-10 text-center px-4">
+                    <span className="text-white font-semibold text-xl mb-2 block">
+                      {example.name}
+                    </span>
+                    <span className="text-gray-200 text-sm">
+                      {example.plyFiles.length} Models
+                    </span>
+                  </div>
                 </div>
                 <h3 className="text-lg font-semibold text-white">
                   {example.name}
@@ -284,13 +336,13 @@ export function Username() {
                             year: "numeric",
                             month: "short",
                             day: "numeric",
-                          }
+                          },
                         )}
                       </p>
                       <p className="text-gray-400 text-xs mt-2">
                         {project.allUrls.reduce(
                           (total, cat) => total + cat.urls.length,
-                          0
+                          0,
                         )}{" "}
                         Models
                       </p>

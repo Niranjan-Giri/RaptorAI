@@ -36,10 +36,6 @@ export default function Login() {
 
       if (response.status === 200) {
         const token = response.data.token || response.data.accessToken;
-        if (token) {
-          localStorage.setItem('jwtToken', token); // Store token in local storage
-          console.log('[Login] JWT token stored in localStorage:', token.substring(0, 50) + '...');
-        }
         const userInfo = {
           id: response.data.id,
           username: response.data.username,
@@ -48,7 +44,8 @@ export default function Login() {
         };
         localStorage.setItem(USER_INFO, JSON.stringify(userInfo));
         localStorage.setItem('isLoggedIn', 'true');
-        navigate('/');
+        localStorage.setItem('jwtToken', token);
+        navigate(`/${userInfo.username}`);
       }
     } catch (err) {
       setError('Invalid username or password');
