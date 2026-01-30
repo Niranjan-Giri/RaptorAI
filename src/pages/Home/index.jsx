@@ -15,7 +15,7 @@ import { USER_INFO } from "../../constants";
 import { useNavigate } from "react-router-dom";
 const navigation = [
   { name: "Home", href: "/", current: true },
-  { name: "Viewer", href: "/viewer", current: false },
+  // { name: "Viewer", href: "/viewer", current: false },
 ];
 
 function classNames(...classes) {

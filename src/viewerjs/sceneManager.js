@@ -132,7 +132,7 @@ export function createSceneManager(app, ui) {
      */
     function calculatePointSize() {
         // Base size in world units - this determines the physical size of points in 3D space
-        const baseSize = 0.003;
+        const baseSize = 0.0015;
         
         // Account for viewport height to maintain consistent density regardless of window size
         // Larger viewports need slightly larger points to maintain perceived density
@@ -140,7 +140,7 @@ export function createSceneManager(app, ui) {
         
         // DPI compensation: Higher DPI screens need larger points to appear the same size
         // Use sqrt to avoid overcompensation on very high DPI screens
-        const dpiCompensation = Math.sqrt(window.devicePixelRatio);
+        const dpiCompensation = window.devicePixelRatio;
         
         // Camera distance factor: adjust for how close/far the camera typically is
         const distanceToTarget = app.camera.position.length();
