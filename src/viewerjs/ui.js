@@ -121,7 +121,7 @@ export function createUIManager(app, sceneManager, queryHandler) {
         // Preferred anchor: the input container inside the query section
         const inputContainer = document.querySelector('#query-section .section-content .query-input-container');
         const queryContainer = inputContainer ? inputContainer.parentElement : document.querySelector('#query-section .section-content');
-        if (!queryContainer) { console.log('[Query] ' + text); return; }
+        if (!queryContainer) { return; }
 
         // Remove any existing message
         const existing = document.getElementById('query-inline-msg');
@@ -183,11 +183,9 @@ export function createUIManager(app, sceneManager, queryHandler) {
 
     function createFileCheckboxes() {
         const container = document.getElementById('object-labels-section'); if (!container) return; const contentDiv = container.querySelector('.section-content'); if (!contentDiv) return;
-        console.log('[UI] createFileCheckboxes, loadedFiles.size=', app.loadedFiles.size);
         contentDiv.innerHTML = '';
         if (app.loadedFiles.size === 0) { contentDiv.textContent = 'Loading objects...'; return; }
         app.loadedFiles.forEach((fileData, filename) => {
-            console.log(`[UI] file ${filename} status: visible=${fileData.visible} loading=${fileData.loading} isPreview=${fileData.isPreview}`);
             const label = document.createElement('label'); label.dataset.filename = filename; label.style.display = 'flex'; label.style.alignItems = 'center'; label.style.marginBottom = '8px'; label.style.cursor = 'pointer'; label.style.flexDirection='column'; label.style.alignItems='flex-start';
             const topRow = document.createElement('div'); topRow.style.display='flex'; topRow.style.alignItems='center'; topRow.style.width='100%';
             const checkbox = document.createElement('input'); checkbox.type='checkbox'; checkbox.checked = fileData.visible; checkbox.style.marginRight='8px'; checkbox.addEventListener('change',(e)=> { sceneManager.toggleFileVisibility(filename, e.target.checked); });
@@ -235,7 +233,6 @@ export function createUIManager(app, sceneManager, queryHandler) {
         URL.revokeObjectURL(url);
         
         showInlineQueryMessage('Scene info exported as info.json. You can use this file with your PLY files for faster loading next time!', 'success');
-        console.log('[SceneInfo] Exported generated scene info:', out);
     }
 
     function setModeButtons() {
@@ -327,9 +324,6 @@ export function createUIManager(app, sceneManager, queryHandler) {
             app.sceneManager.toggleInstancing(enabled);
             updateInstanceStats();
         }
-        
-        const status = enabled ? 'enabled' : 'disabled';
-        console.log(`[Instancing] ${status}`);
     }
     
     function optimizeInstances() {
@@ -405,7 +399,7 @@ export function createUIManager(app, sceneManager, queryHandler) {
 
     function displayQueryResults(data) {
         let modal = document.getElementById('query-results-modal'); if (!modal) modal = createQueryResultsModal(); const contentDiv = document.getElementById('query-results-content');
-        const source = data.source || 'local'; console.log(`[Query] Displaying results from: ${source}`);
+        const source = data.source || 'local';
         let html = `...`;
         html = `<div style="display:flex; align-items:center; justify-content:space-between;"><h3 style="color: #4CAF50; margin-top: 0;">Query Results</h3><div class="query-source-badge" style="font-size: 12px; color: #fff; padding: 6px 8px; border-radius: 8px; margin-left: 8px; background: rgba(255, 193, 7, 0.12); border: 1px solid rgba(255,193,7,0.2)">Local Preview</div></div>`;
         html += `<div style="margin-bottom: 15px;"><strong style="color: #2196F3;">Question:</strong><p style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; margin: 5px 0;">${data.question}</p></div>`;
@@ -452,7 +446,6 @@ export function createUIManager(app, sceneManager, queryHandler) {
             while (app.sceneInfo.name && app.sceneInfo.name[key]) key = `${basename}_${suffix++}`;
             app.sceneInfo.name = app.sceneInfo.name || {};
             app.sceneInfo.name[key] = filename;
-            console.log(`[SceneInfo] Auto-generated entry for ${filename} -> ${key}`);
         }
         
         const geometry = fileData.geometry;
@@ -520,6 +513,6 @@ export function createUIManager(app, sceneManager, queryHandler) {
     }
 
     function updateObjectLabelsUI() {
-        const container = document.getElementById('object-labels-section'); if (!container) return; const contentDiv = container.querySelector('.section-content'); if (!contentDiv) return; const labels = contentDiv.querySelectorAll('label'); labels.forEach(label => { const filename = label.dataset.filename || label.textContent.trim(); if (filename === app.selectedFile) { label.style.background = 'rgba(76, 175, 80, 0.3)'; label.style.fontWeight = 'bold'; } else { label.style.background = ''; label.style.fontWeight = 'normal'; } }); if (app.selectedFile) console.log('Currently selected:', app.selectedFile);
+        const container = document.getElementById('object-labels-section'); if (!container) return; const contentDiv = container.querySelector('.section-content'); if (!contentDiv) return; const labels = contentDiv.querySelectorAll('label'); labels.forEach(label => { const filename = label.dataset.filename || label.textContent.trim(); if (filename === app.selectedFile) { label.style.background = 'rgba(76, 175, 80, 0.3)'; label.style.fontWeight = 'bold'; } else { label.style.background = ''; label.style.fontWeight = 'normal'; } });
     }
 }

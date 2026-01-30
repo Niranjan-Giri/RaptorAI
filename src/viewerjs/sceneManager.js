@@ -23,12 +23,8 @@ export function createSceneManager(app, ui) {
     app.renderer.setPixelRatio(window.devicePixelRatio);
     app.renderer.setSize(window.innerWidth, window.innerHeight);
     const canvasContainer = document.getElementById('canvas-container');
-    //console.log('[SceneManager] canvas-container found:', !!canvasContainer);
     if (canvasContainer) {
       canvasContainer.appendChild(app.renderer.domElement);
-      //console.log('[SceneManager] Canvas appended to canvas-container');
-    } else {
-      console.warn('[SceneManager] canvas-container not found, canvas not appended');
     }
 
     app.controls = new OrbitControls(app.camera, app.renderer.domElement);
@@ -62,8 +58,6 @@ export function createSceneManager(app, ui) {
     
     app.scene.add(app.transformControl.getHelper());
     /************************************************************* */
-
-    //console.log('[SceneManager] TransformControls initialized and helper added to scene');
 
     app.raycaster = new THREE.Raycaster();
     app.raycaster.params.Points.threshold = 0.05; // Increase threshold for easier point cloud selection
@@ -242,8 +236,6 @@ export function createSceneManager(app, ui) {
 
     function loadAllPLYFiles() {
         // starts loading files and initial UI updates
-        console.log('[SceneManager] Starting to load PLY files...');
-        
         // Clear duplicates map for this load session to handle unrelated files with same name
         const usedNames = new Set();
         
@@ -458,7 +450,6 @@ export function createSceneManager(app, ui) {
             if (ui) ui.createFileCheckboxes();
             if (ui) ui.updateObjectLabelsUI();
             const pointCount = geometry.attributes.position.count.toLocaleString();
-            console.log(`[${filename}] ${isPreview ? `Preview (${pointCount} points)` : `Complete (${pointCount} points)`}${wasDownsampled ? ' - downsampled' : ''}`);
             if (!isPreview && app.selectedFile === filename && app.currentMode === 'pan') {
                 const upgradedData = app.loadedFiles.get(filename);
                 if (upgradedData && upgradedData.object) {
@@ -480,7 +471,6 @@ export function createSceneManager(app, ui) {
                     const optimizedCount = optimizeInstances();
                     if (optimizedCount > 0) {
                         const stats = getInstanceStats();
-                        console.log(`[InstanceManager] Stats: ${stats.instancedMeshCount} instanced meshes, ${stats.drawCallReduction} draw calls saved`);
                     }
                 }, 100);
             }
@@ -488,7 +478,6 @@ export function createSceneManager(app, ui) {
     }
 
     function handleFileProgress(filename, message, progress) {
-        console.log(`[${filename}] ${message} (${progress.toFixed(1)}%)`);
         const fileData = app.loadedFiles.get(filename);
         if (fileData) {
             fileData.loadingMessage = message;
@@ -498,7 +487,6 @@ export function createSceneManager(app, ui) {
     }
 
     function handleFileError(filename, error) {
-        console.error(`[${filename}] Load error:`, error);
         const fileData = app.loadedFiles.get(filename);
         if (fileData) {
             fileData.loading = false;
@@ -508,11 +496,8 @@ export function createSceneManager(app, ui) {
     }
 
     function onCanvasClick(event) {
-        console.log('[Click] Click detected at', event.clientX, event.clientY);
-        
         // Don't select if we're actively dragging the gizmo
         if (app._isTransforming) {
-            console.log('[Click] Ignoring - currently transforming');
             return;
         }
 
@@ -529,11 +514,8 @@ export function createSceneManager(app, ui) {
         // Using false for performance unless structure changes.
         const intersects = app.raycaster.intersectObjects(objectsToCheck, false);
         
-        console.log('[Click] Intersects found:', intersects.length, 'Objects checked:', objectsToCheck.length);
-        
         if (intersects.length > 0) {
             const clickedObject = intersects[0].object;
-            console.log('[Click] Object clicked');
             if (app.selectedFile) {
                 const prevData = app.loadedFiles.get(app.selectedFile);
                 if (prevData && prevData.object && app.renderMode === 'points') {
@@ -545,7 +527,6 @@ export function createSceneManager(app, ui) {
             for (const [filename, fileData] of app.loadedFiles.entries()) {
                 if (fileData.object === clickedObject) {
                     app.selectedFile = filename;
-                    console.log('Selected file:', filename);
                     
                     if (app.renderMode === 'points') {
                         clickedObject.material.vertexColors = false;
@@ -566,12 +547,6 @@ export function createSceneManager(app, ui) {
                         
                         // Switch to translate mode by default for easier moving
                         app.transformControl.setMode('translate');
-                        
-                        //console.log('[TransformControls] Attached to object:', filename);
-                        //console.log('[TransformControls] Object:', clickedObject);
-                        //console.log('[TransformControls] Mode:', app.transformControl.mode, 'Visible:', app.transformControl.visible, 'Enabled:', app.transformControl.enabled);
-                    } else {
-                        console.log('[TransformControls] Not attaching - current mode is:', app.currentMode, '(gizmo only works in Pan Mode)');
                     }
                     
                     if (ui) ui.updateObjectLabelsUI();
