@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // Downsampling configuration
 const TARGET_POINTS = 3000000; 
-const DOWNSAMPLE_THRESHOLD = 4000000;
+const DOWNSAMPLE_THRESHOLD = 400000;
 const USE_RANDOM_SELECTION = false;
 const CHUNK_SIZE = 500000;
 
