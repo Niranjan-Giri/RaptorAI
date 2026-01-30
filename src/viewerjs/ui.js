@@ -259,6 +259,7 @@ export function createUIManager(app, sceneManager, queryHandler) {
         //For the base size
         safe('btn-size-increase', () => adjustPointSize(0.001));
         safe('btn-size-decrease', () => adjustPointSize(-0.001));
+        //----------------
         const queryInput = document.getElementById('query-input'); const querySendBtn = document.getElementById('query-send-btn'); if (querySendBtn) querySendBtn.addEventListener('click', () => { const qh = queryHandler || app.query; if (qh && qh.handleQuerySend) qh.handleQuerySend(); }); if (queryInput) queryInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { const qh = queryHandler || app.query; if (qh && qh.handleQuerySend) qh.handleQuerySend(); } });
     }
 

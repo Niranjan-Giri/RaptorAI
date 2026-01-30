@@ -214,6 +214,39 @@ export function createQueryHandler(app, sceneManager, ui) {
         }
     }
 
+    function findMatchingFilename(targetFilename) {
+        // Try exact match first
+        if (app.loadedFiles.has(targetFilename)) {
+            return targetFilename;
+        }
+        
+        // Try case-insensitive match
+        const targetLower = targetFilename.toLowerCase();
+        for (const [filename, fileData] of app.loadedFiles.entries()) {
+            if (filename.toLowerCase() === targetLower) {
+                return filename;
+            }
+        }
+        
+        // Try partial match (includes)
+        for (const [filename, fileData] of app.loadedFiles.entries()) {
+            if (filename.toLowerCase().includes(targetLower) || targetLower.includes(filename.toLowerCase())) {
+                return filename;
+            }
+        }
+        
+        // Try matching without extension
+        const targetNoExt = targetFilename.replace(/\.ply$/i, '');
+        for (const [filename, fileData] of app.loadedFiles.entries()) {
+            const filenameNoExt = filename.replace(/\.ply$/i, '');
+            if (filenameNoExt.toLowerCase() === targetNoExt.toLowerCase()) {
+                return filename;
+            }
+        }
+        
+        return null;
+    }
+
     async function handleQuerySend() {
         const queryInput = document.getElementById('query-input'); if (!queryInput) return; const query = queryInput.value.trim(); if (query === '') return;
         const querySendBtn = document.getElementById('query-send-btn'); const originalBtnHTML = querySendBtn ? querySendBtn.innerHTML : null; 
@@ -284,28 +317,55 @@ export function createQueryHandler(app, sceneManager, ui) {
                         userDisplayMessage = userDisplayMessage.replace(/\[ACTION:ZOOM_OUT\]/g, '');
                     }
 
-                    // Check for HIDE object
-                    const hideMatch = rawAnswer.match(/\[ACTION:HIDE:'(.*?)'\]/);
+                    //This was for single hide and remove
+                    //now we have mutliple cases working below
+                    /*const hideMatch = rawAnswer.match(/\[ACTION:HIDE:'(.*?)'\]/);
                     if (hideMatch && hideMatch[1]) {
                         const filename = hideMatch[1];
                         if (sceneManager && sceneManager.toggleFileVisibility) {
                             sceneManager.toggleFileVisibility(filename, false);
-                            // Also update checkbox UI if possible
+                            
                             if (ui && ui.createFileCheckboxes) ui.createFileCheckboxes();
                         }
                         userDisplayMessage = userDisplayMessage.replace(hideMatch[0], '');
                     }
 
-                    // Check for SHOW object
                     const showMatch = rawAnswer.match(/\[ACTION:SHOW:'(.*?)'\]/);
                     if (showMatch && showMatch[1]) {
                         const filename = showMatch[1];
                         if (sceneManager && sceneManager.toggleFileVisibility) {
                             sceneManager.toggleFileVisibility(filename, true);
-                             // Also update checkbox UI if possible
+                             
                             if (ui && ui.createFileCheckboxes) ui.createFileCheckboxes();
                         }
                         userDisplayMessage = userDisplayMessage.replace(showMatch[0], '');
+                    }*/
+                   //--------------------------------------
+
+                    const hideMatches = [...rawAnswer.matchAll(/\[ACTION:HIDE:'(.*?)'\]/g)];
+                    for (const match of hideMatches) {
+                        const targetFilename = match[1];
+                        const actualFilename = findMatchingFilename(targetFilename);
+                        if (actualFilename && sceneManager && sceneManager.toggleFileVisibility) {
+                            sceneManager.toggleFileVisibility(actualFilename, false);
+                        }
+                        userDisplayMessage = userDisplayMessage.replace(match[0], '');
+                    }
+
+            
+                    const showMatches = [...rawAnswer.matchAll(/\[ACTION:SHOW:'(.*?)'\]/g)];
+                    for (const match of showMatches) {
+                        const targetFilename = match[1];
+                        const actualFilename = findMatchingFilename(targetFilename);
+                        if (actualFilename && sceneManager && sceneManager.toggleFileVisibility) {
+                            sceneManager.toggleFileVisibility(actualFilename, true);
+                        }
+                        userDisplayMessage = userDisplayMessage.replace(match[0], '');
+                    }
+
+                    // Update UI checkboxes after all show/hide operations
+                    if ((hideMatches.length > 0 || showMatches.length > 0) && ui && ui.createFileCheckboxes) {
+                        ui.createFileCheckboxes();
                     }
 
                     // Check for MOVE object (relative)
@@ -396,7 +456,7 @@ export function createQueryHandler(app, sceneManager, ui) {
                     if (ui) ui.showInlineQueryMessage(userDisplayMessage.trim(), 'success');
                     
                     // Optional: Try to detect filename in AI response to highlight only if NOT hiding
-                    if (!hideMatch) {
+                    if (hideMatches.length === 0) {
                         const potentialFiles = sceneFiles.map(f => f.filename);
                         for (const file of potentialFiles) {
                             // Simple check if filename appears in the answer

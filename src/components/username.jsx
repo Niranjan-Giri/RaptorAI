@@ -15,8 +15,8 @@ export const EXAMPLE_PLY_FILES = [
     id: 1,
     name: "Room 212",
     description: "Butler Room 212",
-    thumbnail: "/images/room101.png",
-    bucketUrl: "https://storage.googleapis.com/examples_ply/room_101/",
+    thumbnail: "/images/room212.png",
+    bucketUrl: "https://storage.googleapis.com/examples_ply/room212/",
     plyFiles: [
       "bookshelf_1",
       "ceiling light_1",
