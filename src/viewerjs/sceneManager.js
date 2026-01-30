@@ -23,10 +23,10 @@ export function createSceneManager(app, ui) {
     app.renderer.setPixelRatio(window.devicePixelRatio);
     app.renderer.setSize(window.innerWidth, window.innerHeight);
     const canvasContainer = document.getElementById('canvas-container');
-    console.log('[SceneManager] canvas-container found:', !!canvasContainer);
+    //console.log('[SceneManager] canvas-container found:', !!canvasContainer);
     if (canvasContainer) {
       canvasContainer.appendChild(app.renderer.domElement);
-      console.log('[SceneManager] Canvas appended to canvas-container');
+      //console.log('[SceneManager] Canvas appended to canvas-container');
     } else {
       console.warn('[SceneManager] canvas-container not found, canvas not appended');
     }
@@ -63,7 +63,7 @@ export function createSceneManager(app, ui) {
     app.scene.add(app.transformControl.getHelper());
     /************************************************************* */
 
-    console.log('[SceneManager] TransformControls initialized and helper added to scene');
+    //console.log('[SceneManager] TransformControls initialized and helper added to scene');
 
     app.raycaster = new THREE.Raycaster();
     app.raycaster.params.Points.threshold = 0.05; // Increase threshold for easier point cloud selection
@@ -128,25 +128,24 @@ export function createSceneManager(app, ui) {
     
     /**
      * Calculate optimal point size for consistent visual density across all screens
-     * Takes into account: viewport size, DPI, camera FOV, and distance to target
+     * Simplified formula for better consistency
      */
     function calculatePointSize() {
-        // Base size in world units - this determines the physical size of points in 3D space
-        const baseSize = 0.003;
+        // Use dynamic base size from app state (default 0.015)
+        //Taken from ui.js 
+        const baseSize = app.pointBaseSize || 0.015;
         
-        // Account for viewport height to maintain consistent density regardless of window size
-        // Larger viewports need slightly larger points to maintain perceived density
-        const viewportFactor = Math.sqrt(window.innerHeight / 1080);
+        // DPI compensation - directly scale with device pixel ratio
+        // High DPI screens need proportionally larger points
+        const dpiCompensation = window.devicePixelRatio;
         
-        // DPI compensation: Higher DPI screens need larger points to appear the same size
-        // Use sqrt to avoid overcompensation on very high DPI screens
-        const dpiCompensation = Math.sqrt(window.devicePixelRatio);
+        // Viewport scaling - normalize based on standard 1080p height
+        // This ensures points look similar on different screen sizes
+        const viewportScale = window.innerHeight / 1080;
         
-        // Camera distance factor: adjust for how close/far the camera typically is
-        const distanceToTarget = app.camera.position.length();
-        const distanceFactor = Math.max(0.5, Math.min(2.0, distanceToTarget / 2.0));
-        
-        return baseSize * viewportFactor * dpiCompensation * distanceFactor;
+        // Final size calculation: base * DPI * viewport scale
+        // This provides consistent point density across different displays
+        return baseSize * dpiCompensation * viewportScale;
     }
     function onWindowResize() {
         app.camera.aspect = window.innerWidth / window.innerHeight;
@@ -568,9 +567,9 @@ export function createSceneManager(app, ui) {
                         // Switch to translate mode by default for easier moving
                         app.transformControl.setMode('translate');
                         
-                        console.log('[TransformControls] Attached to object:', filename);
-                        console.log('[TransformControls] Object:', clickedObject);
-                        console.log('[TransformControls] Mode:', app.transformControl.mode, 'Visible:', app.transformControl.visible, 'Enabled:', app.transformControl.enabled);
+                        //console.log('[TransformControls] Attached to object:', filename);
+                        //console.log('[TransformControls] Object:', clickedObject);
+                        //console.log('[TransformControls] Mode:', app.transformControl.mode, 'Visible:', app.transformControl.visible, 'Enabled:', app.transformControl.enabled);
                     } else {
                         console.log('[TransformControls] Not attaching - current mode is:', app.currentMode, '(gizmo only works in Pan Mode)');
                     }

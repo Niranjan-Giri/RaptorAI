@@ -305,6 +305,17 @@ const Viewer = () => {
 
         <div className="section-divider"></div>
 
+        <div className="control-group">
+          <div className="control-label">POINT SIZE</div>
+          <div className="point-size-control">
+            <button className="size-btn" id="btn-size-decrease" title="Decrease Point Size">-</button>
+            <span className="size-value" id="point-size-value">0.015</span>
+            <button className="size-btn" id="btn-size-increase" title="Increase Point Size">+</button>
+          </div>
+        </div>
+
+        <div className="section-divider"></div>
+
         <div id="query-section">
           <div className="section-title">QUERY</div>
           <div className="section-content">
