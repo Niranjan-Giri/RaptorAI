@@ -98,8 +98,6 @@ export function createQueryHandler(app, sceneManager, ui) {
             const qLower = question.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, " "); // Replace punctuation with space
             const qTokens = new Set(qLower.split(/\s+/));
             
-            console.log('[Gemini] Analyzing query for objects:', qLower);
-
             // Helper to check if file is mentioned
             const getMentionedFiles = () => {
                 const mentioned = new Set();
@@ -134,14 +132,12 @@ export function createQueryHandler(app, sceneManager, ui) {
             };
 
             const targetFiles = getMentionedFiles();
-            console.log('[Gemini] Targets found:', targetFiles.map(f => f.filename));
             
             // If the query specifically asks for distance/far/close AND targets found
             const distKeywords = ['distance', 'dist', 'far', 'close', 'near', 'between'];
             const isDistanceQuery = distKeywords.some(k => qLower.includes(k));
 
             if (isDistanceQuery && targetFiles.length >= 2) {
-                console.log('[Gemini] Calculating distances for targets...');
                 for (let i = 0; i < targetFiles.length; i++) {
                     for (let j = i + 1; j < targetFiles.length; j++) {
                         const f1 = targetFiles[i];
@@ -156,7 +152,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                         context.calculated_distances.push(entry);
                     }
                 }
-                console.log('[Gemini] Calculated:', context.calculated_distances);
             }
 
 
@@ -195,7 +190,6 @@ export function createQueryHandler(app, sceneManager, ui) {
             - For relative movements (left, right, etc.), use reasonable default amounts like 1 or 2 units if not specified.`;
             /****************************************************************** */
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-            console.log('[Gemini] Request URL:', url.replace(GEMINI_API_KEY, 'HIDDEN'));
 
             const response = await fetch(url, {
                 method: 'POST',
@@ -216,14 +210,12 @@ export function createQueryHandler(app, sceneManager, ui) {
             return { handled: true, answer: answer };
 
         } catch (error) {
-            console.error('Gemini API Error:', error);
             return { handled: false, error: error.message };
         }
     }
 
     async function handleQuerySend() {
         const queryInput = document.getElementById('query-input'); if (!queryInput) return; const query = queryInput.value.trim(); if (query === '') return;
-        console.log('Query submitted:', query);
         const querySendBtn = document.getElementById('query-send-btn'); const originalBtnHTML = querySendBtn ? querySendBtn.innerHTML : null; 
         
         // UX: Show "Thinking..." state
@@ -282,14 +274,12 @@ export function createQueryHandler(app, sceneManager, ui) {
                     
                     // Check for ZOOM_IN
                     if (rawAnswer.includes('[ACTION:ZOOM_IN]')) {
-                        console.log('[Gemini Action] Zoom In');
                         if (ui && ui.zoomIn) ui.zoomIn();
                         userDisplayMessage = userDisplayMessage.replace(/\[ACTION:ZOOM_IN\]/g, '');
                     }
                     
                     // Check for ZOOM_OUT
                     if (rawAnswer.includes('[ACTION:ZOOM_OUT]')) {
-                        console.log('[Gemini Action] Zoom Out');
                         if (ui && ui.zoomOut) ui.zoomOut();
                         userDisplayMessage = userDisplayMessage.replace(/\[ACTION:ZOOM_OUT\]/g, '');
                     }
@@ -298,7 +288,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                     const hideMatch = rawAnswer.match(/\[ACTION:HIDE:'(.*?)'\]/);
                     if (hideMatch && hideMatch[1]) {
                         const filename = hideMatch[1];
-                        console.log('[Gemini Action] Hide:', filename);
                         if (sceneManager && sceneManager.toggleFileVisibility) {
                             sceneManager.toggleFileVisibility(filename, false);
                             // Also update checkbox UI if possible
@@ -311,7 +300,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                     const showMatch = rawAnswer.match(/\[ACTION:SHOW:'(.*?)'\]/);
                     if (showMatch && showMatch[1]) {
                         const filename = showMatch[1];
-                        console.log('[Gemini Action] Show:', filename);
                         if (sceneManager && sceneManager.toggleFileVisibility) {
                             sceneManager.toggleFileVisibility(filename, true);
                              // Also update checkbox UI if possible
@@ -326,7 +314,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                         const filename = moveMatch[1];
                         const direction = moveMatch[2].toLowerCase();
                         const amount = parseFloat(moveMatch[3]);
-                        console.log('[Gemini Action] Move:', filename, direction, amount);
                         
                         const fileData = app.loadedFiles.get(filename);
                         if (fileData && fileData.object) {
@@ -354,7 +341,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                             obj.updateMatrixWorld(true);
                             // Invalidate bbox cache
                             fileData._cachedBBox = null;
-                            console.log('[Gemini Action] New position:', obj.position);
                         }
                         userDisplayMessage = userDisplayMessage.replace(moveMatch[0], '');
                     }
@@ -366,7 +352,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                         const x = parseFloat(posMatch[2]);
                         const y = parseFloat(posMatch[3]);
                         const z = parseFloat(posMatch[4]);
-                        console.log('[Gemini Action] Position:', filename, { x, y, z });
                         
                         const fileData = app.loadedFiles.get(filename);
                         if (fileData && fileData.object) {
@@ -374,7 +359,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                             fileData.object.updateMatrixWorld(true);
                             // Invalidate bbox cache
                             fileData._cachedBBox = null;
-                            console.log('[Gemini Action] New position:', fileData.object.position);
                         }
                         userDisplayMessage = userDisplayMessage.replace(posMatch[0], '');
                     }
@@ -386,7 +370,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                         const axis = rotateMatch[2].toLowerCase();
                         const degrees = parseFloat(rotateMatch[3]);
                         const radians = (degrees * Math.PI) / 180;
-                        console.log('[Gemini Action] Rotate:', filename, axis, degrees);
                         
                         const fileData = app.loadedFiles.get(filename);
                         if (fileData && fileData.object) {
@@ -405,7 +388,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                             obj.updateMatrixWorld(true);
                             // Invalidate bbox cache
                             fileData._cachedBBox = null;
-                            console.log('[Gemini Action] New rotation:', obj.rotation);
                         }
                         userDisplayMessage = userDisplayMessage.replace(rotateMatch[0], '');
                     }

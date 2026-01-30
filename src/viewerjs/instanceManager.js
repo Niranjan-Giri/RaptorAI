@@ -52,10 +52,6 @@ export class InstanceManager {
         
         const elapsed = performance.now() - startTime;
         
-        if (optimizedCount > 0) {
-            console.log(`[InstanceManager] Optimized ${optimizedCount} objects into ${geometryGroups.size} instanced meshes in ${elapsed.toFixed(1)}ms`);
-        }
-        
         return optimizedCount;
     }
     
@@ -188,8 +184,6 @@ export class InstanceManager {
             objects: objects,
             count
         });
-        
-        console.log(`[InstanceManager] Created instanced mesh for ${count} objects (signature: ${signature})`);
     }
     
     /**

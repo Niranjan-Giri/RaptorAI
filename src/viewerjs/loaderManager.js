@@ -88,7 +88,6 @@ export class LoaderManager {
         // Handle worker messages
         worker.onmessage = (e) => this.handleWorkerMessage(filename, e.data);
         worker.onerror = (error) => {
-            console.error(`Worker error for ${filename}:`, error);
             this.cleanupLoad(filename);
             reject(error);
             if (this.onFileError) {
@@ -106,8 +105,6 @@ export class LoaderManager {
         });
 
         this.workers.push(worker);
-        
-        console.log(`[LoaderManager] Started loading ${filename} with worker`);
     }
 
     /**
@@ -120,7 +117,6 @@ export class LoaderManager {
         switch (data.type) {
             case 'metadata':
                 loadState.totalPoints = data.totalPoints;
-                console.log(`[${filename}] Total points: ${data.totalPoints.toLocaleString()}`);
                 break;
 
             case 'progress':
@@ -138,7 +134,6 @@ export class LoaderManager {
                 break;
 
             case 'error':
-                console.error(`[${filename}] Error:`, data.error);
                 this.cleanupLoad(filename);
                 loadState.reject(new Error(data.error));
                 if (this.onFileError) {
@@ -371,8 +366,6 @@ export class LoaderManager {
         
         // Create final geometry from all chunks
         const finalGeometry = this.createGeometryFromChunks(loadState.chunks);
-        
-        console.log(`[${filename}] Loaded in ${elapsedTime}s - ${loadState.receivedPoints.toLocaleString()} points`);
 
         // Resolve promise
         loadState.resolve(finalGeometry);
