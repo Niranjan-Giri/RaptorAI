@@ -40,6 +40,7 @@ export function initializeApp() {
     sceneInfo: null,
     highlightBoxes: new Map(),
     currentMode: 'select',
+    pointBaseSize: 0.015,
   };
 
   // Instantiate managers

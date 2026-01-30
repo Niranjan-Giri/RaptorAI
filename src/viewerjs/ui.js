@@ -80,7 +80,7 @@ export function createUIManager(app, sceneManager, queryHandler) {
         <h2 style="margin-top:0; color: #4CAF50; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">Object Information</h2>
         <div style="line-height: 1.8; color: #fff;">
             <p><strong style="color: #2196F3;">File Name:</strong> ${app.selectedFile}</p>
-            <p><strong style="color: #2196F3;">File Path:</strong> ${fileData.filepath}</p>
+            <!--<p><strong style="color: #2196F3;">File Path:</strong> ${fileData.filepath}</p>-->
             <p><strong style="color: #2196F3;">Render Mode:</strong> ${app.renderMode === 'points' ? 'Point Cloud' : '3D Mesh'}</p>
             <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 15px 0;">
             <h3 style="color: #FF9800; margin-bottom: 10px;">Geometry</h3>
@@ -259,6 +259,9 @@ export function createUIManager(app, sceneManager, queryHandler) {
         safe('btn-instancing-on', () => setInstancingMode(true));
         safe('btn-instancing-off', () => setInstancingMode(false));
         safe('btn-optimize-now', () => optimizeInstances());
+        //For the base size
+        safe('btn-size-increase', () => adjustPointSize(0.001));
+        safe('btn-size-decrease', () => adjustPointSize(-0.001));
         const queryInput = document.getElementById('query-input'); const querySendBtn = document.getElementById('query-send-btn'); if (querySendBtn) querySendBtn.addEventListener('click', () => { const qh = queryHandler || app.query; if (qh && qh.handleQuerySend) qh.handleQuerySend(); }); if (queryInput) queryInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { const qh = queryHandler || app.query; if (qh && qh.handleQuerySend) qh.handleQuerySend(); } });
     }
 
@@ -294,6 +297,26 @@ export function createUIManager(app, sceneManager, queryHandler) {
     function setQualityMode(mode) { app.qualityMode = mode; document.getElementById('btn-downsampled')?.classList.toggle('active', mode === 'downsampled'); document.getElementById('btn-original-quality')?.classList.toggle('active', mode === 'original'); app.sceneManager.setQualityMode(mode); }
 
     function setRenderMode(mode) { app.renderMode = mode; document.getElementById('btn-point-cloud')?.classList.toggle('active', mode === 'points'); document.getElementById('btn-3d-mesh')?.classList.toggle('active', mode === 'mesh'); app.sceneManager.setRenderMode(mode); }
+    
+    function adjustPointSize(delta) {
+        // Update base size with bounds checking
+        app.pointBaseSize = Math.max(0.001, Math.min(0.1, (app.pointBaseSize || 0.015) + delta));
+        
+        // Update display value
+        const valueEl = document.getElementById('point-size-value');
+        if (valueEl) {
+            valueEl.textContent = app.pointBaseSize.toFixed(3);
+        }
+        
+        // Update all point cloud materials if in points mode
+        if (app.renderMode === 'points' && app.sceneManager && app.sceneManager.updateFileRender) {
+            app.loadedFiles.forEach((fileData, filename) => {
+                if (fileData.visible && fileData.object && fileData.object.isPoints) {
+                    app.sceneManager.updateFileRender(filename);
+                }
+            });
+        }
+    }
     
     function setInstancingMode(enabled) {
         app.instancingEnabled = enabled;
