@@ -4,6 +4,7 @@ export const fetchProcessedPointclouds = async () => {
   try {
     const response = await api.get('/pointclouds/');
     // Filter for processed pointclouds and map to project format
+    console.log("Raw pointcloud response:", response.data);
     const allPointclouds = Array.isArray(response.data)
       ? response.data
       : response.data?.data || [];
