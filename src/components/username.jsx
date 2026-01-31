@@ -294,6 +294,7 @@ export function Username() {
       state: {
         projectName: project.name,
         processedDownloadUrls: project.processedDownloadUrls,
+        files: project.files, // Pass the pre-processed files array to avoid duplication
       },
     });
   };
