@@ -46,13 +46,24 @@ function calculateOptimalGridSize(geometry, targetPoints = TARGET_POINTS) {
  */
 async function loadAndProcessPLY(url, filename, centerOffset, qualityMode = 'downsampled') {
     try {
-        const response = await fetch(url);
+        console.log(`[Worker] Fetching PLY from: ${url}`);
+        const response = await fetch(url, {
+            mode: 'cors',
+            cache: 'default'
+        });
+        
+        console.log(`[Worker] Response status: ${response.status}, Content-Type: ${response.headers.get('Content-Type')}, Content-Length: ${response.headers.get('Content-Length')}`);
+        
         if (!response.ok) {
             throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
         }
 
+        // Ensure we're getting binary data
         const arrayBuffer = await response.arrayBuffer();
+        console.log(`[Worker] ArrayBuffer size: ${arrayBuffer.byteLength} bytes`);
+        
         const geometry = parsePLY(arrayBuffer);
+        console.log(`[Worker] Parsed geometry: ${geometry.attributes.position.count} points`);
 
         if (!geometry.attributes.position) {
             throw new Error('Missing position attribute');
@@ -122,10 +133,10 @@ function parsePLY(data) {
     // Parse header
     let headerLength = 0;
     let headerText = '';
-    const decoder = new TextDecoder();
     
-    // Read header (ASCII)
-    for (let i = 0; i < data.byteLength; i++) {
+    // Read header (ASCII) - limit to first 10KB to find header
+    const maxHeaderSize = Math.min(10000, data.byteLength);
+    for (let i = 0; i < maxHeaderSize; i++) {
         headerText += String.fromCharCode(dataView.getUint8(i));
         if (headerText.endsWith('end_header\n') || headerText.endsWith('end_header\r\n')) {
             headerLength = i + 1;
@@ -133,12 +144,31 @@ function parsePLY(data) {
         }
     }
 
+    if (headerLength === 0) {
+        throw new Error('Could not find PLY header end marker');
+    }
+
     const header = parseHeader(headerText);
+    
+    if (!header.format) {
+        throw new Error('Invalid PLY format in header');
+    }
+    
+    console.log(`[Worker] PLY format: ${header.format}, vertices: ${header.vertices}, faces: ${header.faces}`);
     
     if (header.format === 'binary_little_endian' || header.format === 'binary_big_endian') {
         parseBinaryPLY(dataView, headerLength, header, geometry);
-    } else {
+    } else if (header.format === 'ascii') {
         parseASCIIPLY(headerText, data, headerLength, header, geometry);
+    } else {
+        throw new Error(`Unsupported PLY format: ${header.format}`);
+    }
+    
+    // CRITICAL: Ensure no index buffer exists to prevent line rendering artifacts
+    // This is especially important when PLY files contain face data
+    if (geometry.index !== null) {
+        console.log(`[Worker] Removing ${geometry.index.count} face indices from geometry`);
+        geometry.setIndex(null);
     }
 
     return geometry;
@@ -338,6 +368,10 @@ function parseBinaryPLY(dataView, offset, header, geometry) {
     if (normals.length > 0) {
         geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     }
+    
+    // CRITICAL: Remove any index buffer (faces) to prevent line artifacts in point cloud rendering
+    // Face data causes THREE.Points to render connected vertices as lines
+    geometry.setIndex(null);
 }
 
 /**
@@ -425,6 +459,10 @@ function parseASCIIPLY(headerText, data, headerLength, header, geometry) {
     if (normals.length > 0) {
         geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     }
+    
+    // CRITICAL: Remove any index buffer (faces) to prevent line artifacts in point cloud rendering
+    // Face data causes THREE.Points to render connected vertices as lines
+    geometry.setIndex(null);
 }
 
 /**
