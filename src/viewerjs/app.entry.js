@@ -59,9 +59,12 @@ export function initializeApp() {
   }
   
   app.ui.createFileCheckboxes();
-  // Only load default files if no example was specified via query params
-  // The Viewer component will load the selected example if present
-  if (!window.location.search.includes('example=')) {
+  // Only load default files if no example/project was specified via query params or location state
+  // The Viewer component will load the selected example/project if present
+  const hasQueryParams = window.location.search.includes('example=') || window.location.search.includes('project=');
+  if (!hasQueryParams) {
+    // Additional check: only load if we're at the plain /viewer route without state
+    // This prevents loading defaults when navigating with state
     app.sceneManager.loadAllPLYFiles();
   }
   })();
