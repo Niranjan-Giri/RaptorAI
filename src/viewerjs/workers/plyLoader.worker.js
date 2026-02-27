@@ -6,12 +6,104 @@ const DOWNSAMPLE_THRESHOLD = 4000000;
 const USE_RANDOM_SELECTION = false;
 const CHUNK_SIZE = 500000;
 
-
 const GLOBAL_MIN_BOUNDS = {
     x: -1000.0,
     y: -1000.0,
     z: -1000.0
 };
+
+// WASM Module state
+let wasmModule = null;
+let wasmInitialized = false;
+let wasmInitPromise = null;
+let createPlyModule = null;
+
+/**
+ * Initialize WASM module
+ */
+async function initWasm() {
+    if (wasmInitialized) return wasmModule;
+    if (wasmInitPromise) return wasmInitPromise;
+    
+    wasmInitPromise = (async () => {
+        try {
+            console.log('[WASM] Starting initialization...');
+            
+            // Try multiple loading strategies
+            let loadSuccess = false;
+            
+            // Strategy 1: Try dynamic import from bin folder
+            try {
+                console.log('[WASM] Attempting to load from bin folder...');
+                const plyModuleImport = await import('../../../bin/PLY.js');
+                createPlyModule = plyModuleImport.default || plyModuleImport;
+                console.log('[WASM] PLY.js loaded successfully from bin folder');
+                
+                // Get the WASM file URL
+                const wasmUrl = new URL('../../../bin/PLY.wasm', import.meta.url);
+                console.log('[WASM] WASM file URL:', wasmUrl.href);
+                
+                wasmModule = await createPlyModule({
+                    locateFile: (path) => {
+                        if (path.endsWith('.wasm')) {
+                            return wasmUrl.href;
+                        }
+                        return path;
+                    }
+                });
+                
+                loadSuccess = true;
+            } catch (binError) {
+                console.warn('[WASM] Failed to load from bin folder:', binError.message);
+                
+                // Strategy 2: Try loading from public folder via script tag
+                try {
+                    console.log('[WASM] Attempting to load from public folder...');
+                    
+                    // Load the Emscripten module via script
+                    const scriptUrl = '/bin/PLY.js';
+                    const scriptResponse = await fetch(scriptUrl);
+                    if (!scriptResponse.ok) throw new Error(`Failed to fetch ${scriptUrl}`);
+                    
+                    const scriptText = await scriptResponse.text();
+                    
+                    // Execute the script in a function scope to capture the module
+                    const moduleFunc = new Function(scriptText + '; return createPlyModule;');
+                    createPlyModule = moduleFunc();
+                    
+                    wasmModule = await createPlyModule({
+                        locateFile: (path) => {
+                            if (path.endsWith('.wasm')) {
+                                return '/bin/PLY.wasm';
+                            }
+                            return path;
+                        }
+                    });
+                    
+                    loadSuccess = true;
+                    console.log('[WASM] Loaded successfully from public folder');
+                } catch (publicError) {
+                    console.warn('[WASM] Failed to load from public folder:', publicError.message);
+                }
+            }
+            
+            if (!loadSuccess) {
+                throw new Error('All WASM loading strategies failed');
+            }
+            
+            wasmInitialized = true;
+            console.log('[WASM] Module initialized successfully');
+            return wasmModule;
+        } catch (error) {
+            console.error('[WASM] Failed to initialize WASM module:', error);
+            console.error('[WASM] Stack:', error.stack);
+            wasmInitPromise = null;
+            throw error;
+        }
+    })();
+    
+    return wasmInitPromise;
+}
 
 /**
  * Calculate optimal grid size based on point cloud bounds
@@ -45,14 +137,49 @@ function calculateOptimalGridSize(geometry, targetPoints = TARGET_POINTS) {
  * Parse PLY file incrementally and send chunks back to main thread
  */
 async function loadAndProcessPLY(url, filename, centerOffset, qualityMode = 'downsampled') {
+    const startTime = performance.now();
+    let useWasm = false;
+    
     try {
+        // Try to initialize WASM module first
+        try {
+            await initWasm();
+            useWasm = true;
+            console.log(`[WASM] Using WASM parser for ${filename}`);
+        } catch (wasmError) {
+            console.warn('[WASM] WASM initialization failed, falling back to JS parser:', wasmError.message);
+            useWasm = false;
+        }
+        
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
         }
 
         const arrayBuffer = await response.arrayBuffer();
-        const geometry = parsePLY(arrayBuffer);
+        const fetchTime = performance.now() - startTime;
+        console.log(`[${useWasm ? 'WASM' : 'JS'}] Fetched ${filename} in ${fetchTime.toFixed(2)}ms`);
+        
+        // Parse PLY - try WASM first, fallback to JS
+        let geometry;
+        const parseStartTime = performance.now();
+        
+        if (useWasm) {
+            try {
+                geometry = await parsePLYWithWasm(arrayBuffer, filename);
+                const parseTime = performance.now() - parseStartTime;
+                console.log(`[WASM] Parsed ${geometry.attributes.position.count.toLocaleString()} points in ${parseTime.toFixed(2)}ms`);
+            } catch (wasmParseError) {
+                console.warn('[WASM] WASM parsing failed, falling back to JS parser:', wasmParseError.message);
+                geometry = parsePLY(arrayBuffer);
+                const parseTime = performance.now() - parseStartTime;
+                console.log(`[JS] Parsed ${geometry.attributes.position.count.toLocaleString()} points in ${parseTime.toFixed(2)}ms`);
+            }
+        } else {
+            geometry = parsePLY(arrayBuffer);
+            const parseTime = performance.now() - parseStartTime;
+            console.log(`[JS] Parsed ${geometry.attributes.position.count.toLocaleString()} points in ${parseTime.toFixed(2)}ms`);
+        }
 
         if (!geometry.attributes.position) {
             throw new Error('Missing position attribute');
@@ -64,15 +191,6 @@ async function loadAndProcessPLY(url, filename, centerOffset, qualityMode = 'dow
             filename,
             totalPoints: geometry.attributes.position.count
         });
-
-        // Center the geometry
-        // if (centerOffset) {
-        //     geometry.translate(-centerOffset.x, -centerOffset.y, -centerOffset.z);
-        // } else {
-        //     geometry.computeBoundingBox();
-        //     const center = geometry.boundingBox.getCenter(new THREE.Vector3());
-        //     geometry.translate(-center.x, -center.y, -center.z);
-        // }
 
         // Ensure normals and colors exist
         ensureGeometryHasNormals(geometry);
@@ -88,13 +206,20 @@ async function loadAndProcessPLY(url, filename, centerOffset, qualityMode = 'dow
             // Calculate optimal grid size for this specific geometry
             const gridSize = calculateOptimalGridSize(geometry, TARGET_POINTS);
             
+            const downsampleStartTime = performance.now();
             // Downsample and send in chunks
             const downsampled = downsampleGeometryStreaming(geometry, filename, gridSize);
+            const downsampleTime = performance.now() - downsampleStartTime;
+            console.log(`[${useWasm ? 'WASM' : 'JS'}] Downsampled to ${downsampled.attributes.position.count.toLocaleString()} points in ${downsampleTime.toFixed(2)}ms`);
+            
             sendGeometryInChunks(downsampled, filename, true);
         } else {
             // Send as-is in chunks
             sendGeometryInChunks(geometry, filename, false);
         }
+
+        const totalTime = performance.now() - startTime;
+        console.log(`[${useWasm ? 'WASM' : 'JS'}] Total processing time for ${filename}: ${totalTime.toFixed(2)}ms`);
 
         // Send completion message
         postMessage({
@@ -103,11 +228,111 @@ async function loadAndProcessPLY(url, filename, centerOffset, qualityMode = 'dow
         });
 
     } catch (error) {
+        console.error('[PLY Loader] Error loading PLY:', error);
+        console.error('[PLY Loader] Stack trace:', error.stack);
         postMessage({
             type: 'error',
             filename,
             error: error.message
         });
+    }
+}
+
+/**
+ * Parse PLY using WASM module for faster processing
+ */
+async function parsePLYWithWasm(arrayBuffer, filename) {
+    const wasm = wasmModule;
+    
+    try {
+        postMessage({
+            type: 'progress',
+            filename,
+            message: 'Parsing with WASM...',
+            progress: 10
+        });
+        
+        // Allocate memory in WASM heap
+        const byteLength = arrayBuffer.byteLength;
+        const dataPtr = wasm._wasm_alloc(byteLength);
+        
+        if (!dataPtr) {
+            throw new Error('Failed to allocate WASM memory');
+        }
+        
+        // Copy data to WASM heap
+        const heapBytes = new Uint8Array(wasm.HEAPU8.buffer, dataPtr, byteLength);
+        heapBytes.set(new Uint8Array(arrayBuffer));
+        
+        // Process PLY buffer
+        const result = wasm._process_ply_buffer(dataPtr, byteLength);
+        
+        if (result !== 0) {
+            wasm._wasm_free(dataPtr);
+            throw new Error(`WASM PLY parsing failed with code: ${result}`);
+        }
+        
+        postMessage({
+            type: 'progress',
+            filename,
+            message: 'Extracting geometry data...',
+            progress: 30
+        });
+        
+        // Get vertex count
+        const vertexCount = wasm._get_vertex_count();
+        
+        if (vertexCount === 0) {
+            wasm._wasm_free(dataPtr);
+            throw new Error('No vertices found in PLY file');
+        }
+        
+        // Get pointers to data arrays
+        const positionsPtr = wasm._get_positions();
+        const colorsPtr = wasm._get_colors();
+        const normalsPtr = wasm._get_normals();
+        
+        // Copy data from WASM heap to JavaScript arrays
+        const positions = new Float32Array(wasm.HEAPF32.buffer, positionsPtr, vertexCount * 3);
+        const colors = new Float32Array(wasm.HEAPF32.buffer, colorsPtr, vertexCount * 3);
+        const normals = normalsPtr ? new Float32Array(wasm.HEAPF32.buffer, normalsPtr, vertexCount * 3) : null;
+        
+        // Create copies since WASM memory will be freed
+        const positionsCopy = new Float32Array(positions);
+        const colorsCopy = new Float32Array(colors);
+        const normalsCopy = normals ? new Float32Array(normals) : null;
+        
+        // Free WASM memory
+        wasm._wasm_free(dataPtr);
+        
+        postMessage({
+            type: 'progress',
+            filename,
+            message: 'Creating geometry...',
+            progress: 50
+        });
+        
+        // Create Three.js geometry
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positionsCopy, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsCopy, 3));
+        
+        if (normalsCopy) {
+            geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normalsCopy, 3));
+        }
+        
+        postMessage({
+            type: 'progress',
+            filename,
+            message: `Loaded ${vertexCount.toLocaleString()} vertices with WASM`,
+            progress: 60
+        });
+        
+        return geometry;
+        
+    } catch (error) {
+        console.error('[WASM] Parsing error details:', error);
+        throw error; // Let the caller handle fallback
     }
 }
 

@@ -16,5 +16,25 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, '')
       }
     }
+  },
+  worker: {
+    format: 'es',
+    plugins: () => []
+  },
+  optimizeDeps: {
+    exclude: ['bin/PLY.js']
+  },
+  assetsInclude: ['**/*.wasm'],
+  build: {
+    rollupOptions: {
+      output: {
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name?.endsWith('.wasm')) {
+            return 'assets/[name][extname]';
+          }
+          return 'assets/[name]-[hash][extname]';
+        }
+      }
+    }
   }
 });
