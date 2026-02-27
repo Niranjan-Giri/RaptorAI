@@ -550,3 +550,14 @@ body
     width: 16px;
     height: 16px;
 }
+
+/* Grouped object labels */
+#object-labels-section .section-content > div 
+{
+    border-radius: 6px;
+}
+
+#object-labels-section label 
+{
+    padding: 6px 10px;
+}

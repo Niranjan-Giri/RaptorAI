@@ -185,30 +185,165 @@ export function createUIManager(app, sceneManager, queryHandler) {
         const container = document.getElementById('object-labels-section'); if (!container) return; const contentDiv = container.querySelector('.section-content'); if (!contentDiv) return;
         contentDiv.innerHTML = '';
         if (app.loadedFiles.size === 0) { contentDiv.textContent = 'Loading objects...'; return; }
+
+        // --- Helper: parse a display name into { base, num } ---
+        // "Chair 1" → { base:"Chair", num:"1" }   "chair_2" → { base:"chair", num:"2" }
+        // "bag3"    → { base:"bag",   num:"3" }    "table"   → { base:"table", num:null }
+        function parseNameGroup(name) {
+            const m = name.match(/^(.+?)[\s_-]*(\d+)$/);
+            if (m) return { base: m[1].trim(), num: m[2] };
+            return { base: name, num: null };
+        }
+
+        // --- Build entry list with display info ---
+        const fileEntries = [];
         app.loadedFiles.forEach((fileData, filename) => {
-            const label = document.createElement('label'); label.dataset.filename = filename; label.style.display = 'flex'; label.style.alignItems = 'center'; label.style.marginBottom = '8px'; label.style.cursor = 'pointer'; label.style.flexDirection='column'; label.style.alignItems='flex-start';
-            const topRow = document.createElement('div'); topRow.style.display='flex'; topRow.style.alignItems='center'; topRow.style.width='100%';
-            const checkbox = document.createElement('input'); checkbox.type='checkbox'; checkbox.checked = fileData.visible; checkbox.style.marginRight='8px'; checkbox.addEventListener('change',(e)=> { sceneManager.toggleFileVisibility(filename, e.target.checked); });
-            const nameSpan = document.createElement('span');
-            let statusText = '';
-            if (fileData.error) { statusText = ` (error: ${fileData.error})`; nameSpan.style.color='#ff6b6b'; }
-            else if (fileData.loading) { statusText = fileData.isPreview ? ' (loading...)' : ' (processing...)'; nameSpan.style.color='#ffa500'; }
-            else if (fileData.isPreview) { statusText = ' (preview)'; nameSpan.style.color='#ffd700'; }
-            else if (fileData.wasDownsampled) { statusText = ' (downsampled)'; }
             let displayName = filename;
             if (app.sceneInfo && app.sceneInfo.displayNames && app.sceneInfo.displayNames.has(filename)) {
-                const labs = app.sceneInfo.displayNames.get(filename); if (labs && labs.length>0) displayName = `${labs.join(', ')} (${filename})`;
+                const labs = app.sceneInfo.displayNames.get(filename);
+                if (labs && labs.length > 0) displayName = labs[0];
             }
-            nameSpan.textContent = displayName + statusText; nameSpan.style.cursor='pointer'; nameSpan.title='Click to highlight this object';
-            nameSpan.addEventListener('click', (e)=>{ e.stopPropagation(); const fd = app.loadedFiles.get(filename); if (!fd || !fd.geometry) return; fd.geometry.computeBoundingBox(); const center = fd.geometry.boundingBox.getCenter(new THREE.Vector3()).toArray(); const size = fd.geometry.boundingBox.getSize(new THREE.Vector3()).toArray(); sceneManager.createHighlightBox({ name: filename, filename: filename, center, size }); });
-            topRow.appendChild(checkbox); topRow.appendChild(nameSpan); label.appendChild(topRow);
-            if (fileData.loading && fileData.loadingProgress !== undefined) {
-                const progressBar = document.createElement('div'); Object.assign(progressBar.style,{ width:'100%', height:'4px', backgroundColor:'rgba(255,255,255,0.2)', marginTop:'4px', borderRadius:'2px', overflow:'hidden'});
-                const progressFill = document.createElement('div'); progressFill.style.width = `${fileData.loadingProgress}%`; progressFill.style.height='100%'; progressFill.style.backgroundColor='#4CAF50'; progressFill.style.transition='width 0.3s ease';
-                progressBar.appendChild(progressFill); label.appendChild(progressBar);
-                if (fileData.loadingMessage) { const messageSpan = document.createElement('span'); messageSpan.textContent = fileData.loadingMessage; messageSpan.style.fontSize='10px'; messageSpan.style.color='#aaa'; messageSpan.style.marginTop='2px'; label.appendChild(messageSpan);} }
-            contentDiv.appendChild(label);
+            let statusText = '';
+            let statusColor = '';
+            if (fileData.error) { statusText = ` (error: ${fileData.error})`; statusColor = '#ff6b6b'; }
+            else if (fileData.loading) { statusText = fileData.isPreview ? ' (loading...)' : ' (processing...)'; statusColor = '#ffa500'; }
+            else if (fileData.isPreview) { statusText = ' (preview)'; statusColor = '#ffd700'; }
+            else if (fileData.wasDownsampled) { statusText = ' (downsampled)'; }
+            fileEntries.push({ filename, fileData, displayName, statusText, statusColor });
         });
+
+        // --- Group entries by base category ---
+        const groups = new Map();
+        for (const entry of fileEntries) {
+            const { base, num } = parseNameGroup(entry.displayName);
+            const groupKey = base.toLowerCase();
+            if (!groups.has(groupKey)) groups.set(groupKey, { baseName: base, items: [] });
+            groups.get(groupKey).items.push({ ...entry, num });
+        }
+
+        // --- Render a single file row ---
+        function renderFileRow(parent, item, showNumOnly) {
+            const { filename, fileData, displayName, statusText, statusColor, num } = item;
+            const label = document.createElement('label');
+            label.dataset.filename = filename;
+            Object.assign(label.style, { display:'flex', flexDirection:'column', alignItems:'flex-start', marginBottom:'4px', cursor:'pointer' });
+
+            const topRow = document.createElement('div');
+            Object.assign(topRow.style, { display:'flex', alignItems:'center', width:'100%' });
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox'; checkbox.checked = fileData.visible; checkbox.style.marginRight = '8px';
+            checkbox.addEventListener('change', (e) => { sceneManager.toggleFileVisibility(filename, e.target.checked); });
+
+            const nameSpan = document.createElement('span');
+            if (statusColor) nameSpan.style.color = statusColor;
+            nameSpan.textContent = displayName + statusText;
+            nameSpan.style.cursor = 'pointer'; nameSpan.title = 'Click to highlight this object';
+            nameSpan.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const fd = app.loadedFiles.get(filename); if (!fd || !fd.geometry) return;
+                fd.geometry.computeBoundingBox();
+                const center = fd.geometry.boundingBox.getCenter(new THREE.Vector3()).toArray();
+                const size = fd.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
+                sceneManager.createHighlightBox({ name: filename, filename, center, size });
+            });
+
+            topRow.appendChild(checkbox); topRow.appendChild(nameSpan); label.appendChild(topRow);
+
+            if (fileData.loading && fileData.loadingProgress !== undefined) {
+                const progressBar = document.createElement('div');
+                Object.assign(progressBar.style, { width:'100%', height:'4px', backgroundColor:'rgba(255,255,255,0.2)', marginTop:'4px', borderRadius:'2px', overflow:'hidden' });
+                const progressFill = document.createElement('div');
+                progressFill.style.width = `${fileData.loadingProgress}%`; progressFill.style.height = '100%';
+                progressFill.style.backgroundColor = '#4CAF50'; progressFill.style.transition = 'width 0.3s ease';
+                progressBar.appendChild(progressFill); label.appendChild(progressBar);
+                if (fileData.loadingMessage) {
+                    const msg = document.createElement('span');
+                    msg.textContent = fileData.loadingMessage;
+                    Object.assign(msg.style, { fontSize:'10px', color:'#aaa', marginTop:'2px' });
+                    label.appendChild(msg);
+                }
+            }
+            parent.appendChild(label);
+        }
+
+        // --- Render each group ---
+        for (const [, group] of groups) {
+            // Single item with no number → flat row
+            if (group.items.length === 1 && group.items[0].num === null) {
+                renderFileRow(contentDiv, group.items[0], false);
+                continue;
+            }
+
+            // Collapsible group
+            const groupDiv = document.createElement('div');
+            groupDiv.style.marginBottom = '6px';
+
+            // Header row
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display:'flex', alignItems:'center', cursor:'pointer',
+                padding:'6px 8px', borderRadius:'6px',
+                background:'rgba(255,255,255,0.05)', transition:'background 0.2s',
+                userSelect:'none'
+            });
+            header.addEventListener('mouseenter', () => { header.style.background = 'rgba(255,255,255,0.08)'; });
+            header.addEventListener('mouseleave', () => { header.style.background = 'rgba(255,255,255,0.05)'; });
+
+            // Group-level checkbox (show/hide all)
+            const groupCb = document.createElement('input');
+            groupCb.type = 'checkbox';
+            groupCb.checked = group.items.every(i => i.fileData.visible);
+            groupCb.style.marginRight = '8px';
+
+            // Arrow indicator
+            const arrow = document.createElement('span');
+            arrow.textContent = '▶';
+            Object.assign(arrow.style, { marginRight:'8px', transition:'transform 0.2s', fontSize:'10px', color:'#888' });
+
+            // Category label
+            const catLabel = document.createElement('span');
+            catLabel.textContent = `${group.baseName}`;
+            Object.assign(catLabel.style, { fontWeight:'600', fontSize:'12px', flex:'1' });
+
+            // Item count badge
+            const badge = document.createElement('span');
+            badge.textContent = group.items.length;
+            Object.assign(badge.style, {
+                fontSize:'10px', color:'#aaa', background:'rgba(255,255,255,0.1)',
+                padding:'1px 6px', borderRadius:'8px', marginLeft:'6px'
+            });
+
+            header.appendChild(groupCb); header.appendChild(arrow);
+            header.appendChild(catLabel); header.appendChild(badge);
+
+            // Collapsible items container
+            const itemsDiv = document.createElement('div');
+            Object.assign(itemsDiv.style, { paddingLeft:'24px', overflow:'hidden', maxHeight:'0', transition:'max-height 0.3s ease' });
+
+            // Sort items numerically
+            group.items.sort((a, b) => (parseInt(a.num) || 0) - (parseInt(b.num) || 0));
+            for (const item of group.items) renderFileRow(itemsDiv, item, true);
+
+            // Toggle expand/collapse
+            let isOpen = false;
+            header.addEventListener('click', (e) => {
+                if (e.target === groupCb) return;
+                isOpen = !isOpen;
+                arrow.style.transform = isOpen ? 'rotate(90deg)' : '';
+                itemsDiv.style.maxHeight = isOpen ? `${group.items.length * 44}px` : '0';
+            });
+
+            // Group checkbox toggles all children
+            groupCb.addEventListener('change', (e) => {
+                e.stopPropagation();
+                for (const item of group.items) sceneManager.toggleFileVisibility(item.filename, e.target.checked);
+                itemsDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = e.target.checked; });
+            });
+
+            groupDiv.appendChild(header); groupDiv.appendChild(itemsDiv);
+            contentDiv.appendChild(groupDiv);
+        }
     }
 
     function exportSceneInfo() {
