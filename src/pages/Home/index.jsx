@@ -56,7 +56,7 @@ export default function Home() {
 
   return (
     <>
-      <title>RaptorAI</title>
+      <title>RaptorTwin</title>
       <div className="home-root min-h-full">
         <Disclosure as="nav" className="bg-gray-800/50">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -65,7 +65,7 @@ export default function Home() {
                 <a href="/">
                   <div className="shrink-0">
                     <img
-                      alt="RaptorAI"
+                      alt="RaptorTwin"
                       src="./images/logo.png"
                       className="h-15 w-25 object-contain"
                     />

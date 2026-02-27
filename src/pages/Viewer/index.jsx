@@ -29,8 +29,11 @@ const Viewer = () => {
   }, []);
   
   useEffect(() => {
+    let initTimer = null;
+    let checkAndSetupUI = null;
+    
     // Small delay to ensure canvas-container is in the DOM
-    const initTimer = setTimeout(() => {
+    initTimer = setTimeout(() => {
       const canvasContainer = document.getElementById('canvas-container');
       console.log('[Viewer] Canvas container check:', {
         found: !!canvasContainer,
@@ -49,10 +52,14 @@ const Viewer = () => {
         return;
       }
       
-      const checkAndSetupUI = setInterval(() => {
+      let hasInitialized = false; // Flag to prevent multiple initializations
+      checkAndSetupUI = setInterval(() => {
         const btnOrbit = document.getElementById('btn-orbit');
         
-        if (app && btnOrbit && app.ui) {
+        if (app && btnOrbit && app.ui && !hasInitialized) {
+          hasInitialized = true; // Set flag immediately to prevent re-entry
+          clearInterval(checkAndSetupUI); // Clear interval first
+          
           if (typeof app.ui.setupMenuControls === 'function') {
             app.ui.setupMenuControls();
           }
@@ -107,80 +114,19 @@ const Viewer = () => {
                 setIsLoading(false);
               }, 500);
             }
-          } else if(processedDownloadUrls && Object.keys(processedDownloadUrls).length > 0){
-            // Load from processed download URLs (project clicked)
-            setIsLoading(true);
-            
-            // Use the pre-calculated 'files' list from pointcloudService if available, 
-            // otherwise fallback to generating it here (legacy support)
-            let filesToLoad = [];
-            
-            // Check if we have the new 'files' structure in location.state (assuming passed from Projects)
-            if (location.state && location.state.files) {
-                 filesToLoad = location.state.files;
-            } else {
-                // Fallback generation (bag1, bag2 style)
-                Object.entries(processedDownloadUrls).forEach(([category, urls]) => {
-                  const urlArray = Array.isArray(urls) ? urls : [urls];
-                  urlArray.forEach((url, index) => {
-                    const name = urlArray.length > 1 ? `${category}${index + 1}` : category;
-                    filesToLoad.push({ name, url });
-                  });
-                });
-            }
-                        
-            // Set the PLY files and names
-            app.plyFiles = filesToLoad.map(f => f.url);
-            app.plyFileNames = filesToLoad.map(f => f.name);
-            
-            // Clear previously loaded files from the scene
-            app.loadedFiles.forEach((fileData) => {
-              if (fileData.object && fileData.object.parent) {
-                fileData.object.parent.remove(fileData.object);
-              }
-              if (fileData.geometry) {
-                fileData.geometry.dispose();
-              }
-              if (fileData.object && fileData.object.material) {
-                if (Array.isArray(fileData.object.material)) {
-                  fileData.object.material.forEach(m => m.dispose());
-                } else {
-                  fileData.object.material.dispose();
-                }
-              }
-            });
-            app.loadedFiles.clear();
-            
-            // Cancel any pending loads
-            if (app.loaderManager && typeof app.loaderManager.cancelAll === 'function') {
-              app.loaderManager.cancelAll();
-            }
-            
-            // Load all PLY files
-            if (app.sceneManager && typeof app.sceneManager.loadAllPLYFiles === 'function') {
-              app.sceneManager.loadAllPLYFiles();
-              
-              // Frame the objects after a short delay
-              setTimeout(() => {
-                if (app.sceneManager && typeof app.sceneManager.frameAllObjects === 'function') {
-                  console.log('[Viewer] Framing loaded objects');
-                  app.sceneManager.frameAllObjects(1000);
-                }
-                setIsLoading(false);
-              }, 500);
-            }
           } 
           else {
             // No example selected, hide loading screen
             setIsLoading(false);
           }
-          clearInterval(checkAndSetupUI);
         }
       }, 100);
     }, 50);
 
     return () => {
-      clearTimeout(initTimer);
+      if (initTimer) clearTimeout(initTimer);
+      if (checkAndSetupUI) clearInterval(checkAndSetupUI);
+      
       const app = window.__app;
       const canvasContainer = document.getElementById('canvas-container');
       if (app && app.renderer && canvasContainer) {
