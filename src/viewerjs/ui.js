@@ -126,12 +126,23 @@ export function createUIManager(app, sceneManager, queryHandler) {
             || (inputContainer ? inputContainer.parentElement : document.querySelector('#query-section .section-content'));
         if (!queryContainer) { return; }
 
-        // Remove any existing message
-        const existing = document.getElementById('query-inline-msg');
-        if (existing) existing.remove();
+        // Keep a single transient "Thinking..." item while preserving chat history.
+        const existingThinking = document.getElementById('query-inline-thinking');
+        const isThinkingMessage = type === 'info' && String(text).trim().toLowerCase() === 'thinking...';
+
+        if (isThinkingMessage && existingThinking) {
+            existingThinking.innerHTML = 'Thinking...';
+            queryContainer.scrollTop = queryContainer.scrollHeight;
+            return;
+        }
+
+        if (!isThinkingMessage && existingThinking) {
+            existingThinking.remove();
+        }
 
         const msg = document.createElement('div');
-        msg.id = 'query-inline-msg';
+        msg.classList.add('chat-msg', `chat-msg-${type}`);
+        if (isThinkingMessage) msg.id = 'query-inline-thinking';
         
         // Simple Markdown Parser for Gemini responses
         // 1. **bold** -> <strong>bold</strong>
@@ -145,31 +156,6 @@ export function createUIManager(app, sceneManager, queryHandler) {
 
         msg.innerHTML = formattedText;
 
-        // More visible styles for multiline error/info messages below the input
-        Object.assign(msg.style, {
-            marginTop: '8px',
-            padding: '8px 10px',
-            borderRadius: '6px',
-            fontSize: '13px',
-            width: '100%',
-            boxSizing: 'border-box',
-            whiteSpace: 'normal',
-            overflow: 'visible'
-        });
-        if (type === 'success') {
-            msg.style.background = 'rgba(76,175,80,0.12)';
-            msg.style.border = '1px solid rgba(76,175,80,0.25)';
-            msg.style.color = '#c8ffd1';
-        } else if (type === 'error') {
-            msg.style.background = 'rgba(244,67,54,0.12)';
-            msg.style.border = '1px solid rgba(244,67,54,0.25)';
-            msg.style.color = '#ffd6d1';
-        } else {
-            msg.style.background = 'rgba(255,255,255,0.04)';
-            msg.style.border = '1px solid rgba(255,255,255,0.06)';
-            msg.style.color = '#fff';
-        }
-
         // In chat mode, append into dedicated message list. Otherwise place below input.
         if (chatMessagesContainer) {
             queryContainer.appendChild(msg);
@@ -178,6 +164,9 @@ export function createUIManager(app, sceneManager, queryHandler) {
         } else {
             queryContainer.appendChild(msg);
         }
+
+        // Keep newest messages visible.
+        queryContainer.scrollTop = queryContainer.scrollHeight;
 
         if (duration > 0) {
             setTimeout(() => {

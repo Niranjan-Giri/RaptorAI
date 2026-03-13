@@ -334,6 +334,9 @@ const Viewer = () => {
         <div className="chat-widget-panel" aria-hidden={!isChatOpen}>
           <div className="chat-widget-header">Raptor AI</div>
           <div className="chat-widget-body">
+            <div className="chat-history-box">
+              <div id="query-inline-messages" className="chat-widget-messages"></div>
+            </div>
             <div className="query-input-container">
               <input
                 type="text"
@@ -355,7 +358,6 @@ const Viewer = () => {
                 </svg>
               </button>
             </div>
-            <div id="query-inline-messages" className="chat-widget-messages"></div>
           </div>
         </div>
       </div>
