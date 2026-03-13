@@ -4,6 +4,11 @@ const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 export function createQueryHandler(app, sceneManager, ui) {
     const queryCache = new Map();
+    let isQueryInFlight = false;
+    let currentAbortController = null;
+
+    const SEND_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></svg>`;
+    const PAUSE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14M16 5v14" /></svg>`;
 
     const handler = {
         getSceneMetadata,
@@ -75,7 +80,7 @@ export function createQueryHandler(app, sceneManager, ui) {
         return { handled: false };
     }
 
-    async function geminiQueryHandler(question, sceneFiles) {
+    async function geminiQueryHandler(question, sceneFiles, abortSignal) {
         if (!GEMINI_API_KEY) {
             return { handled: false, error: 'Gemini API Key not configured' };
         }
@@ -194,6 +199,7 @@ export function createQueryHandler(app, sceneManager, ui) {
             const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: abortSignal,
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: systemPrompt }] }]
                 })
@@ -210,6 +216,9 @@ export function createQueryHandler(app, sceneManager, ui) {
             return { handled: true, answer: answer };
 
         } catch (error) {
+            if (error?.name === 'AbortError') {
+                return { handled: false, aborted: true, error: 'Request aborted by user' };
+            }
             return { handled: false, error: error.message };
         }
     }
@@ -248,17 +257,37 @@ export function createQueryHandler(app, sceneManager, ui) {
     }
 
     async function handleQuerySend() {
-        const queryInput = document.getElementById('query-input'); if (!queryInput) return; const query = queryInput.value.trim(); if (query === '') return;
-        const querySendBtn = document.getElementById('query-send-btn'); const originalBtnHTML = querySendBtn ? querySendBtn.innerHTML : null; 
+        const queryInput = document.getElementById('query-input');
+        if (!queryInput) return;
+        const querySendBtn = document.getElementById('query-send-btn');
+
+        // While thinking, the same button acts as a pause/stop control.
+        if (isQueryInFlight) {
+            if (currentAbortController) {
+                currentAbortController.abort();
+            }
+            return;
+        }
+
+        const query = queryInput.value.trim();
+        if (query === '') return;
+        if (ui) ui.showInlineQueryMessage(query, 'user');
+        queryInput.value = '';
         
         // UX: Show "Thinking..." state
-        if (querySendBtn) { querySendBtn.innerHTML = '<div class="spinner"></div>'; querySendBtn.disabled = true; }
+        isQueryInFlight = true;
+        if (querySendBtn) {
+            querySendBtn.innerHTML = PAUSE_ICON;
+            querySendBtn.classList.add('pause-state');
+            querySendBtn.disabled = false;
+        }
         if (ui) ui.showInlineQueryMessage('Thinking...', 'info');
 
         try {
+                currentAbortController = new AbortController();
                 // Gemini AI Only Mode
                 const sceneFiles = getSceneMetadata();
-                const aiResponse = await geminiQueryHandler(query, sceneFiles);
+                const aiResponse = await geminiQueryHandler(query, sceneFiles, currentAbortController.signal);
                 
                 if (aiResponse.handled && !aiResponse.error && aiResponse.answer && aiResponse.answer !== "I couldn't generate an answer.") {
                     const rawAnswer = aiResponse.answer;
@@ -389,7 +418,7 @@ export function createQueryHandler(app, sceneManager, ui) {
                     }
                     
                     // Display cleaned message
-                    if (ui) ui.showInlineQueryMessage(userDisplayMessage.trim(), 'success');
+                    if (ui) ui.showInlineQueryMessage(userDisplayMessage.trim(), 'assistant');
                     
                     // Optional: Try to detect filename in AI response to highlight only if NOT hiding
                     if (hideMatches.length === 0) {
@@ -409,7 +438,9 @@ export function createQueryHandler(app, sceneManager, ui) {
                         }
                     }
 
-                } else if (aiResponse.error === 'Gemini API Key not configured') {
+                 } else if (aiResponse.aborted) {
+                     if (ui) ui.showInlineQueryMessage('Response paused. You can send another message.', 'info');
+                 } else if (aiResponse.error === 'Gemini API Key not configured') {
                      if (ui) ui.showInlineQueryMessage('Query not understood. Configure Gemini API Key to enable AI.', 'error');
                 } else {
                      if (ui) ui.showInlineQueryMessage('No answer found.', 'error');
@@ -418,8 +449,13 @@ export function createQueryHandler(app, sceneManager, ui) {
             }
             */
         } finally {
-            if (querySendBtn) { querySendBtn.innerHTML = originalBtnHTML; querySendBtn.disabled = false; }
-            queryInput.value = '';
+            isQueryInFlight = false;
+            currentAbortController = null;
+            if (querySendBtn) {
+                querySendBtn.innerHTML = SEND_ICON;
+                querySendBtn.classList.remove('pause-state');
+                querySendBtn.disabled = false;
+            }
         }
     }
 }
