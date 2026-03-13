@@ -6,6 +6,8 @@ export function createQueryHandler(app, sceneManager, ui) {
     const queryCache = new Map();
     let isQueryInFlight = false;
     let currentAbortController = null;
+    const conversationHistory = [];
+    let lastReferencedFilename = null;
 
     const SEND_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></svg>`;
     const PAUSE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 5v14M16 5v14" /></svg>`;
@@ -21,6 +23,32 @@ export function createQueryHandler(app, sceneManager, ui) {
 
     function normalizeQuestion(q) {
         return q.trim().toLowerCase();
+    }
+
+    function addHistory(role, text) {
+        conversationHistory.push({ role, text: String(text || '') });
+        if (conversationHistory.length > 20) {
+            conversationHistory.shift();
+        }
+    }
+
+    function detectFilenameMention(text) {
+        if (!text) return null;
+        const lower = String(text).toLowerCase();
+        for (const [filename] of app.loadedFiles.entries()) {
+            const fLower = filename.toLowerCase();
+            const noExt = fLower.replace(/\.ply$/i, '');
+            if (lower.includes(fLower) || lower.includes(noExt)) {
+                return filename;
+            }
+        }
+        return null;
+    }
+
+    function enrichQuestionWithSessionReference(question) {
+        const hasPronounRef = /\b(it|that|this|that one|this one|them|those)\b/i.test(question);
+        if (!hasPronounRef || !lastReferencedFilename) return question;
+        return `${question}\n\nContext: In this session, pronouns like "it/that/this/them" refer to '${lastReferencedFilename}'.`;
     }
 
     function getSceneMetadata() {
@@ -96,7 +124,9 @@ export function createQueryHandler(app, sceneManager, ui) {
                     position: f.bbox.center,
                     size: f.bbox.size
                 })),
-                sceneMapping: app.sceneInfo ? 'Available' : 'Not available'
+                sceneMapping: app.sceneInfo ? 'Available' : 'Not available',
+                lastReferencedObject: lastReferencedFilename,
+                recentConversation: conversationHistory.slice(-8)
             };
             // Dynamic Distance Calculation (On-Demand)
             context.calculated_distances = [];
@@ -192,7 +222,8 @@ export function createQueryHandler(app, sceneManager, ui) {
             - If the question asks for distance, look at the 'calculated_distances' array.
             - If you mention a filename, put it in single quotes like 'filename.ply'.
             - When asked to move objects, use the appropriate ACTION code.
-            - For relative movements (left, right, etc.), use reasonable default amounts like 1 or 2 units if not specified.`;
+            - For relative movements (left, right, etc.), use reasonable default amounts like 1 or 2 units if not specified.
+            - IMPORTANT MEMORY RULE: if user says pronouns like "it", "that", "this", "them", resolve to context.lastReferencedObject when available.`;
             /****************************************************************** */
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -272,6 +303,29 @@ export function createQueryHandler(app, sceneManager, ui) {
         const query = queryInput.value.trim();
         if (query === '') return;
         if (ui) ui.showInlineQueryMessage(query, 'user');
+        addHistory('user', query);
+        const directMention = detectFilenameMention(query);
+        if (directMention) lastReferencedFilename = directMention;
+
+        // Fast-path for follow-up pronoun commands in the same session.
+        const hasPronounRef = /\b(it|that|this|that one|this one|them|those)\b/i.test(query);
+        const wantsHide = /\b(remove|hide|delete)\b/i.test(query);
+        const wantsShow = /\b(show|add|bring\s+back|unhide)\b/i.test(query);
+        if (hasPronounRef && lastReferencedFilename && (wantsHide || wantsShow)) {
+            const makeVisible = Boolean(wantsShow && !wantsHide);
+            if (sceneManager && sceneManager.toggleFileVisibility) {
+                sceneManager.toggleFileVisibility(lastReferencedFilename, makeVisible);
+            }
+            if (ui && ui.createFileCheckboxes) {
+                ui.createFileCheckboxes();
+            }
+            const actionWord = makeVisible ? 'shown' : 'hidden';
+            const msg = `Done. '${lastReferencedFilename}' is now ${actionWord}.`;
+            if (ui) ui.showInlineQueryMessage(msg, 'assistant');
+            addHistory('assistant', msg);
+            queryInput.value = '';
+            return;
+        }
         queryInput.value = '';
         
         // UX: Show "Thinking..." state
@@ -287,7 +341,8 @@ export function createQueryHandler(app, sceneManager, ui) {
                 currentAbortController = new AbortController();
                 // Gemini AI Only Mode
                 const sceneFiles = getSceneMetadata();
-                const aiResponse = await geminiQueryHandler(query, sceneFiles, currentAbortController.signal);
+                const contextualQuery = enrichQuestionWithSessionReference(query);
+                const aiResponse = await geminiQueryHandler(contextualQuery, sceneFiles, currentAbortController.signal);
                 
                 if (aiResponse.handled && !aiResponse.error && aiResponse.answer && aiResponse.answer !== "I couldn't generate an answer.") {
                     const rawAnswer = aiResponse.answer;
@@ -313,6 +368,7 @@ export function createQueryHandler(app, sceneManager, ui) {
                         const actualFilename = findMatchingFilename(targetFilename);
                         if (actualFilename && sceneManager && sceneManager.toggleFileVisibility) {
                             sceneManager.toggleFileVisibility(actualFilename, false);
+                            lastReferencedFilename = actualFilename;
                         }
                         userDisplayMessage = userDisplayMessage.replace(match[0], '');
                     }
@@ -324,6 +380,7 @@ export function createQueryHandler(app, sceneManager, ui) {
                         const actualFilename = findMatchingFilename(targetFilename);
                         if (actualFilename && sceneManager && sceneManager.toggleFileVisibility) {
                             sceneManager.toggleFileVisibility(actualFilename, true);
+                            lastReferencedFilename = actualFilename;
                         }
                         userDisplayMessage = userDisplayMessage.replace(match[0], '');
                     }
@@ -342,6 +399,7 @@ export function createQueryHandler(app, sceneManager, ui) {
                         
                         const fileData = app.loadedFiles.get(filename);
                         if (fileData && fileData.object) {
+                            lastReferencedFilename = filename;
                             const obj = fileData.object;
                             switch (direction) {
                                 case 'left':
@@ -380,6 +438,7 @@ export function createQueryHandler(app, sceneManager, ui) {
                         
                         const fileData = app.loadedFiles.get(filename);
                         if (fileData && fileData.object) {
+                            lastReferencedFilename = filename;
                             fileData.object.position.set(x, y, z);
                             fileData.object.updateMatrixWorld(true);
                             // Invalidate bbox cache
@@ -398,6 +457,7 @@ export function createQueryHandler(app, sceneManager, ui) {
                         
                         const fileData = app.loadedFiles.get(filename);
                         if (fileData && fileData.object) {
+                            lastReferencedFilename = filename;
                             const obj = fileData.object;
                             switch (axis) {
                                 case 'x':
@@ -419,6 +479,10 @@ export function createQueryHandler(app, sceneManager, ui) {
                     
                     // Display cleaned message
                     if (ui) ui.showInlineQueryMessage(userDisplayMessage.trim(), 'assistant');
+                    addHistory('assistant', userDisplayMessage.trim());
+
+                    const filenameFromAnswer = detectFilenameMention(userDisplayMessage);
+                    if (filenameFromAnswer) lastReferencedFilename = filenameFromAnswer;
                     
                     // Optional: Try to detect filename in AI response to highlight only if NOT hiding
                     if (hideMatches.length === 0) {
@@ -440,10 +504,13 @@ export function createQueryHandler(app, sceneManager, ui) {
 
                  } else if (aiResponse.aborted) {
                      if (ui) ui.showInlineQueryMessage('Response paused. You can send another message.', 'info');
+                     addHistory('assistant', 'Response paused by user.');
                  } else if (aiResponse.error === 'Gemini API Key not configured') {
                      if (ui) ui.showInlineQueryMessage('Query not understood. Configure Gemini API Key to enable AI.', 'error');
+                     addHistory('assistant', 'Gemini API Key not configured.');
                 } else {
                      if (ui) ui.showInlineQueryMessage('No answer found.', 'error');
+                     addHistory('assistant', 'No answer found.');
                 }
             /*
             }
