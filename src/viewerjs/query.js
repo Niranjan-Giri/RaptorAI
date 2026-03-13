@@ -256,45 +256,6 @@ export function createQueryHandler(app, sceneManager, ui) {
         if (ui) ui.showInlineQueryMessage('Thinking...', 'info');
 
         try {
-            //I have commented out this block, so that the fall back
-            //will be from gemini, and not from regex
-            //we can uncomment later
-
-
-
-            /*
-            // 1. Try Local Regex Match first
-            const localResponse = localQueryHandler(query);
-            
-            if (localResponse && localResponse.handled) {
-                const first = localResponse.data.results && localResponse.data.results[0];
-                if (first && (first.center || first.size || first.filename)) {
-                    let filename = first.filename;
-                    if (filename) {
-                        const f = Array.from(app.loadedFiles.entries()).find(([name, fd]) => name.toLowerCase() === String(filename).toLowerCase() || fd.filepath.toLowerCase().endsWith(String(filename).toLowerCase()));
-                        if (f) {
-                            const [name, fd] = f;
-                            if (fd.geometry) {
-                                fd.geometry.computeBoundingBox(); const center = fd.geometry.boundingBox.getCenter(new THREE.Vector3()).toArray(); const size = fd.geometry.boundingBox.getSize(new THREE.Vector3()).toArray(); sceneManager.createHighlightBox({ name, filename: name, center, size });
-                            } else {
-                                sceneManager.createHighlightBox({ name: filename, filename, center: first.center || [0,0,0], size: first.size || [1,1,1] });
-                            }
-                        } else {
-                            sceneManager.createHighlightBox({ name: filename, filename, center: first.center || [0,0,0], size: first.size || [1,1,1] });
-                        }
-                    } else {
-                        sceneManager.createHighlightBox({ name: first.object, filename: first.object, center: first.center || [0,0,0], size: first.size || [1,1,1] });
-                    }
-                } else if (first && first.exists !== undefined) {
-                    const existsMsg = first.exists ? `Yes, ${first.object} is present.` : `No, ${first.object} is not present.`; if (ui) ui.showInlineQueryMessage(existsMsg, first.exists ? 'success' : 'error');
-                } else if (localResponse.data && localResponse.data.results && localResponse.data.results.length > 0) {
-                    const row = localResponse.data.results[0]; const keys = Object.keys(row || {}); if (keys.length > 0) { const msg = keys.map(k => `${k}: ${row[k]}`).join(', '); if (ui) ui.showInlineQueryMessage(msg, 'info'); }
-                } else {
-                    if (ui) ui.showInlineQueryMessage('No results found.', 'error');
-                }
-            } else {
-            */
-
                 // Gemini AI Only Mode
                 const sceneFiles = getSceneMetadata();
                 const aiResponse = await geminiQueryHandler(query, sceneFiles);
@@ -316,31 +277,6 @@ export function createQueryHandler(app, sceneManager, ui) {
                         if (ui && ui.zoomOut) ui.zoomOut();
                         userDisplayMessage = userDisplayMessage.replace(/\[ACTION:ZOOM_OUT\]/g, '');
                     }
-
-                    //This was for single hide and remove
-                    //now we have mutliple cases working below
-                    /*const hideMatch = rawAnswer.match(/\[ACTION:HIDE:'(.*?)'\]/);
-                    if (hideMatch && hideMatch[1]) {
-                        const filename = hideMatch[1];
-                        if (sceneManager && sceneManager.toggleFileVisibility) {
-                            sceneManager.toggleFileVisibility(filename, false);
-                            
-                            if (ui && ui.createFileCheckboxes) ui.createFileCheckboxes();
-                        }
-                        userDisplayMessage = userDisplayMessage.replace(hideMatch[0], '');
-                    }
-
-                    const showMatch = rawAnswer.match(/\[ACTION:SHOW:'(.*?)'\]/);
-                    if (showMatch && showMatch[1]) {
-                        const filename = showMatch[1];
-                        if (sceneManager && sceneManager.toggleFileVisibility) {
-                            sceneManager.toggleFileVisibility(filename, true);
-                             
-                            if (ui && ui.createFileCheckboxes) ui.createFileCheckboxes();
-                        }
-                        userDisplayMessage = userDisplayMessage.replace(showMatch[0], '');
-                    }*/
-                   //--------------------------------------
 
                     const hideMatches = [...rawAnswer.matchAll(/\[ACTION:HIDE:'(.*?)'\]/g)];
                     for (const match of hideMatches) {

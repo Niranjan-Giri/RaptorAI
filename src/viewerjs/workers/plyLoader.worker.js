@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import createPlyModule from '../../../bin/PLY.js';
+import createPlyModule from '../../../public/bin/PLY.js';
 
 // ── Early message queue ─────────────────────────────────────────────────────
 // Register the message handler IMMEDIATELY — before any top-level await.
