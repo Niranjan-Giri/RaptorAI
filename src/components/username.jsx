@@ -341,6 +341,7 @@ export function Username() {
             <div ref={profileImageRef} className="relative">
               <img
                 src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${userInfo?.username}`}
+                crossOrigin="anonymous"
                 alt="Profile"
                 className="w-40 h-40 rounded-full border-4 border-gray-900 shadow-lg bg-white"
               />

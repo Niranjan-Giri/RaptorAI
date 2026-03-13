@@ -104,6 +104,7 @@ export default function Home() {
                           <img
                             alt=""
                             src={user?.imageUrl}
+                            crossOrigin="anonymous"
                             className="size-8 rounded-full outline -outline-offset-1 outline-white/10"
                           />
                         </MenuButton>
@@ -188,6 +189,7 @@ export default function Home() {
                     <img
                       alt=""
                       src={user?.imageUrl}
+                      crossOrigin="anonymous"
                       className="size-10 rounded-full outline -outline-offset-1 outline-white/10"
                     />
                   </div>

@@ -1,4 +1,14 @@
 import * as THREE from 'three';
+import createPlyModule from '../../../bin/PLY.js';
+
+// ── Early message queue ─────────────────────────────────────────────────────
+// Register the message handler IMMEDIATELY — before any top-level await.
+// Without this, messages posted by the main thread during WASM init would be
+// dispatched while self.onmessage is still null and silently dropped.
+const _earlyMessages = [];
+self.onmessage = function(e) {
+    _earlyMessages.push(e);
+};
 
 // Downsampling configuration
 const TARGET_POINTS = 3000000; 
@@ -12,97 +22,44 @@ const GLOBAL_MIN_BOUNDS = {
     z: -1000.0
 };
 
-// WASM Module state
+// ── WASM module initialization ──────────────────────────────────────────────
+// Eagerly initialize at module load. Since PLY.js is built with pthreads +
+// EXPORT_ES6, Emscripten will try to spawn classic Web Workers for threads.
+// We wrap initialization in a try/catch so the module still works
+// single-threaded if pthread spawning fails in the nested worker context.
 let wasmModule = null;
-let wasmInitialized = false;
-let wasmInitPromise = null;
-let createPlyModule = null;
+try {
+    wasmModule = await createPlyModule({
+        // For pthread workers: point at the public/bin/ copy
+        mainScriptUrlOrBlob: new URL('../../../bin/PLY.js', import.meta.url).href,
+        locateFile(path) {
+            if (path.endsWith('.wasm')) {
+                return new URL('../../../bin/PLY.wasm', import.meta.url).href;
+            }
+            // For the .js file too (pthread workers may request it)
+            if (path.endsWith('.js') || path.endsWith('.mjs')) {
+                return new URL('../../../bin/' + path, import.meta.url).href;
+            }
+            return path;
+        }
+    });
+    console.log('[WASM] Module initialized successfully');
+} catch (err) {
+    console.error('[WASM] Module init failed:', err);
+    wasmModule = null;
+}
 
 /**
- * Initialize WASM module
+ * Safely get the underlying WASM linear-memory ArrayBuffer.
+ * This build only exposes Module["HEAPF32"] — we use its .buffer
+ * as the canonical source for all typed-array views.
  */
-async function initWasm() {
-    if (wasmInitialized) return wasmModule;
-    if (wasmInitPromise) return wasmInitPromise;
-    
-    wasmInitPromise = (async () => {
-        try {
-            console.log('[WASM] Starting initialization...');
-            
-            // Try multiple loading strategies
-            let loadSuccess = false;
-            
-            // Strategy 1: Try dynamic import from bin folder
-            try {
-                console.log('[WASM] Attempting to load from bin folder...');
-                const plyModuleImport = await import('../../../bin/PLY.js');
-                createPlyModule = plyModuleImport.default || plyModuleImport;
-                console.log('[WASM] PLY.js loaded successfully from bin folder');
-                
-                // Get the WASM file URL
-                const wasmUrl = new URL('../../../bin/PLY.wasm', import.meta.url);
-                console.log('[WASM] WASM file URL:', wasmUrl.href);
-                
-                wasmModule = await createPlyModule({
-                    locateFile: (path) => {
-                        if (path.endsWith('.wasm')) {
-                            return wasmUrl.href;
-                        }
-                        return path;
-                    }
-                });
-                
-                loadSuccess = true;
-            } catch (binError) {
-                console.warn('[WASM] Failed to load from bin folder:', binError.message);
-                
-                // Strategy 2: Try loading from public folder via script tag
-                try {
-                    console.log('[WASM] Attempting to load from public folder...');
-                    
-                    // Load the Emscripten module via script
-                    const scriptUrl = '/bin/PLY.js';
-                    const scriptResponse = await fetch(scriptUrl);
-                    if (!scriptResponse.ok) throw new Error(`Failed to fetch ${scriptUrl}`);
-                    
-                    const scriptText = await scriptResponse.text();
-                    
-                    // Execute the script in a function scope to capture the module
-                    const moduleFunc = new Function(scriptText + '; return createPlyModule;');
-                    createPlyModule = moduleFunc();
-                    
-                    wasmModule = await createPlyModule({
-                        locateFile: (path) => {
-                            if (path.endsWith('.wasm')) {
-                                return '/bin/PLY.wasm';
-                            }
-                            return path;
-                        }
-                    });
-                    
-                    loadSuccess = true;
-                    console.log('[WASM] Loaded successfully from public folder');
-                } catch (publicError) {
-                    console.warn('[WASM] Failed to load from public folder:', publicError.message);
-                }
-            }
-            
-            if (!loadSuccess) {
-                throw new Error('All WASM loading strategies failed');
-            }
-            
-            wasmInitialized = true;
-            console.log('[WASM] Module initialized successfully');
-            return wasmModule;
-        } catch (error) {
-            console.error('[WASM] Failed to initialize WASM module:', error);
-            console.error('[WASM] Stack:', error.stack);
-            wasmInitPromise = null;
-            throw error;
-        }
-    })();
-    
-    return wasmInitPromise;
+function getWasmBuffer() {
+    if (wasmModule.HEAPF32 && wasmModule.HEAPF32.buffer) return wasmModule.HEAPF32.buffer;
+    if (wasmModule.HEAPU8 && wasmModule.HEAPU8.buffer) return wasmModule.HEAPU8.buffer;
+    if (wasmModule.wasmMemory && wasmModule.wasmMemory.buffer) return wasmModule.wasmMemory.buffer;
+    if (wasmModule.asm?.memory?.buffer) return wasmModule.asm.memory.buffer;
+    throw new Error('Cannot locate WASM linear memory buffer');
 }
 
 /**
@@ -141,14 +98,10 @@ async function loadAndProcessPLY(url, filename, centerOffset, qualityMode = 'dow
     let useWasm = false;
     
     try {
-        // Try to initialize WASM module first
-        try {
-            await initWasm();
-            useWasm = true;
+        // WASM module is already initialized at the top level
+        useWasm = !!wasmModule;
+        if (useWasm) {
             console.log(`[WASM] Using WASM parser for ${filename}`);
-        } catch (wasmError) {
-            console.warn('[WASM] WASM initialization failed, falling back to JS parser:', wasmError.message);
-            useWasm = false;
         }
         
         const response = await fetch(url);
@@ -161,180 +114,189 @@ async function loadAndProcessPLY(url, filename, centerOffset, qualityMode = 'dow
         const fetchTime = performance.now() - startTime;
         console.log(`[${useWasm ? 'WASM' : 'JS'}] Fetched ${filename} in ${fetchTime.toFixed(2)}ms`);
         
-        // Parse PLY - try WASM first, fallback to JS
-        let geometry;
-        const parseStartTime = performance.now();
-        
+        // ---- WASM fast path: parse + downsample entirely in WASM ----
         if (useWasm) {
             try {
-                geometry = await parsePLYWithWasm(arrayBuffer, filename);
-                const parseTime = performance.now() - parseStartTime;
-                console.log(`[WASM] Parsed ${geometry.attributes.position.count.toLocaleString()} points in ${parseTime.toFixed(2)}ms`);
+                const needsDownsampling = qualityMode === 'downsampled';
+                const result = await parsePLYWithWasm(arrayBuffer, filename, needsDownsampling);
+                const parseTime = performance.now() - startTime - fetchTime;
+                console.log(`[WASM] Parsed${result.wasDownsampled ? ' + downsampled' : ''} ${result.vertexCount.toLocaleString()} points in ${parseTime.toFixed(2)}ms`);
+
+                // Send metadata
+                postMessage({ type: 'metadata', filename, totalPoints: result.originalCount });
+
+                // Send raw Float32Arrays directly in chunks (no THREE.js overhead)
+                sendRawArraysInChunks(result.positions, result.colors, result.normals, filename, result.wasDownsampled);
+
+                const totalTime = performance.now() - startTime;
+                console.log(`[WASM] Total processing time for ${filename}: ${totalTime.toFixed(2)}ms`);
+                postMessage({ type: 'complete', filename });
+                return; // Done — skip JS path
             } catch (wasmParseError) {
-                console.warn('[WASM] WASM parsing failed, falling back to JS parser:', wasmParseError.message);
-                geometry = parsePLY(arrayBuffer);
-                const parseTime = performance.now() - parseStartTime;
-                console.log(`[JS] Parsed ${geometry.attributes.position.count.toLocaleString()} points in ${parseTime.toFixed(2)}ms`);
+                console.warn('[WASM] WASM parse/resample failed, falling back to JS:', wasmParseError.message);
             }
-        } else {
-            geometry = parsePLY(arrayBuffer);
-            const parseTime = performance.now() - parseStartTime;
-            console.log(`[JS] Parsed ${geometry.attributes.position.count.toLocaleString()} points in ${parseTime.toFixed(2)}ms`);
         }
+
+        // ---- JS fallback path ----
+        const parseStartTime = performance.now();
+        const geometry = parsePLY(arrayBuffer);
+        console.log(`[JS] Parsed ${geometry.attributes.position.count.toLocaleString()} points in ${(performance.now() - parseStartTime).toFixed(2)}ms`);
 
         if (!geometry.attributes.position) {
             throw new Error('Missing position attribute');
         }
 
-        // Send initial metadata
-        postMessage({
-            type: 'metadata',
-            filename,
-            totalPoints: geometry.attributes.position.count
-        });
+        postMessage({ type: 'metadata', filename, totalPoints: geometry.attributes.position.count });
 
-        // Ensure normals and colors exist
         ensureGeometryHasNormals(geometry);
         if (!geometry.attributes.color) {
             const defaultColors = createDefaultColors(geometry.attributes.position.count);
             geometry.setAttribute('color', new THREE.Float32BufferAttribute(defaultColors, 3));
         }
 
-        // Decide whether to downsample based on quality mode
         const needsDownsampling = qualityMode === 'downsampled' && geometry.attributes.position.count > DOWNSAMPLE_THRESHOLD;
 
         if (needsDownsampling) {
-            // Calculate optimal grid size for this specific geometry
             const gridSize = calculateOptimalGridSize(geometry, TARGET_POINTS);
-            
             const downsampleStartTime = performance.now();
-            // Downsample and send in chunks
             const downsampled = downsampleGeometryStreaming(geometry, filename, gridSize);
-            const downsampleTime = performance.now() - downsampleStartTime;
-            console.log(`[${useWasm ? 'WASM' : 'JS'}] Downsampled to ${downsampled.attributes.position.count.toLocaleString()} points in ${downsampleTime.toFixed(2)}ms`);
-            
+            console.log(`[JS] Downsampled to ${downsampled.attributes.position.count.toLocaleString()} points in ${(performance.now() - downsampleStartTime).toFixed(2)}ms`);
             sendGeometryInChunks(downsampled, filename, true);
         } else {
-            // Send as-is in chunks
             sendGeometryInChunks(geometry, filename, false);
         }
 
-        const totalTime = performance.now() - startTime;
-        console.log(`[${useWasm ? 'WASM' : 'JS'}] Total processing time for ${filename}: ${totalTime.toFixed(2)}ms`);
-
-        // Send completion message
-        postMessage({
-            type: 'complete',
-            filename
-        });
+        console.log(`[JS] Total processing time for ${filename}: ${(performance.now() - startTime).toFixed(2)}ms`);
+        postMessage({ type: 'complete', filename });
 
     } catch (error) {
         console.error('[PLY Loader] Error loading PLY:', error);
         console.error('[PLY Loader] Stack trace:', error.stack);
-        postMessage({
-            type: 'error',
-            filename,
-            error: error.message
-        });
+        postMessage({ type: 'error', filename, error: error.message });
     }
 }
 
 /**
- * Parse PLY using WASM module for faster processing
+ * Parse PLY using WASM module — returns raw Float32Arrays (no THREE.js)
+ * When downsample=true, calls resample_ply() in WASM so the heavy work stays native.
  */
-async function parsePLYWithWasm(arrayBuffer, filename) {
+async function parsePLYWithWasm(arrayBuffer, filename, downsample = false) {
     const wasm = wasmModule;
     
     try {
-        postMessage({
-            type: 'progress',
-            filename,
-            message: 'Parsing with WASM...',
-            progress: 10
-        });
+        postMessage({ type: 'progress', filename, message: 'Parsing with WASM...', progress: 10 });
         
-        // Allocate memory in WASM heap
+        // Allocate memory in WASM heap and copy PLY data in
         const byteLength = arrayBuffer.byteLength;
         const dataPtr = wasm._wasm_alloc(byteLength);
+        if (!dataPtr) throw new Error('Failed to allocate WASM memory');
         
-        if (!dataPtr) {
-            throw new Error('Failed to allocate WASM memory');
-        }
+        // Re-fetch buffer after alloc (memory may have grown, detaching old views)
+        new Uint8Array(getWasmBuffer(), dataPtr, byteLength).set(new Uint8Array(arrayBuffer));
         
-        // Copy data to WASM heap
-        const heapBytes = new Uint8Array(wasm.HEAPU8.buffer, dataPtr, byteLength);
-        heapBytes.set(new Uint8Array(arrayBuffer));
-        
-        // Process PLY buffer
-        const result = wasm._process_ply_buffer(dataPtr, byteLength);
-        
-        if (result !== 0) {
+        // Parse the PLY file (header + vertex data)
+        // C signature: process_ply_buffer(data, length, voxelSize, threadCount)
+        //   voxelSize=0 → parse only (no downsampling yet)
+        //   threadCount=1 (WASM is single-threaded)
+        //   Returns 1 on success, 0 on failure
+        const parseResult = wasm._process_ply_buffer(dataPtr, byteLength, 0.0, 1);
+        if (parseResult !== 1) {
             wasm._wasm_free(dataPtr);
-            throw new Error(`WASM PLY parsing failed with code: ${result}`);
+            throw new Error(`WASM PLY parsing failed (returned ${parseResult})`);
         }
         
-        postMessage({
-            type: 'progress',
-            filename,
-            message: 'Extracting geometry data...',
-            progress: 30
-        });
-        
-        // Get vertex count
-        const vertexCount = wasm._get_vertex_count();
-        
-        if (vertexCount === 0) {
+        const originalCount = wasm._get_vertex_count();
+        if (originalCount === 0) {
             wasm._wasm_free(dataPtr);
             throw new Error('No vertices found in PLY file');
         }
         
-        // Get pointers to data arrays
+        postMessage({ type: 'progress', filename, message: `Parsed ${originalCount.toLocaleString()} vertices`, progress: 30 });
+        
+        // ---- Downsample in WASM if requested ----
+        let wasDownsampled = false;
+        if (downsample && originalCount > DOWNSAMPLE_THRESHOLD) {
+            postMessage({ type: 'progress', filename, message: 'Downsampling in WASM...', progress: 40 });
+            
+            // Calculate optimal grid size from bounding box (read positions pointer)
+            const gridSize = calculateOptimalGridSizeFromWasm(wasm, originalCount, TARGET_POINTS);
+            console.log(`[WASM] resample_ply gridSize=${gridSize.toFixed(6)} for ${originalCount.toLocaleString()} -> ~${TARGET_POINTS.toLocaleString()} target`);
+            
+            // C signature: resample_ply(voxelSize, threadCount)
+            //   threadCount=1 (WASM is single-threaded)
+            //   Returns 1 on success, 0 on failure
+            const resampleResult = wasm._resample_ply(gridSize, 1);
+            if (resampleResult === 1) {
+                wasDownsampled = true;
+                console.log(`[WASM] Resampled from ${originalCount.toLocaleString()} to ${wasm._get_vertex_count().toLocaleString()} points`);
+            } else {
+                console.warn(`[WASM] resample_ply failed (returned ${resampleResult}), using full data`);
+            }
+        }
+        
+        postMessage({ type: 'progress', filename, message: 'Extracting geometry data...', progress: 60 });
+        
+        // Read final vertex count (may have changed after resample)
+        const vertexCount = wasm._get_vertex_count();
         const positionsPtr = wasm._get_positions();
         const colorsPtr = wasm._get_colors();
         const normalsPtr = wasm._get_normals();
         
-        // Copy data from WASM heap to JavaScript arrays
-        const positions = new Float32Array(wasm.HEAPF32.buffer, positionsPtr, vertexCount * 3);
-        const colors = new Float32Array(wasm.HEAPF32.buffer, colorsPtr, vertexCount * 3);
-        const normals = normalsPtr ? new Float32Array(wasm.HEAPF32.buffer, normalsPtr, vertexCount * 3) : null;
-        
-        // Create copies since WASM memory will be freed
-        const positionsCopy = new Float32Array(positions);
-        const colorsCopy = new Float32Array(colors);
-        const normalsCopy = normals ? new Float32Array(normals) : null;
+        // Copy from WASM heap in one shot — much faster than per-vertex accessor calls
+        // Re-fetch buffer (resample may have grown memory)
+        const memBuffer = getWasmBuffer();
+        const positions = new Float32Array(memBuffer, positionsPtr, vertexCount * 3).slice();
+        const colors = new Float32Array(memBuffer, colorsPtr, vertexCount * 3).slice();
+        // normalsPtr is a C pointer — 0 means null (no normals in the file)
+        const normals = (normalsPtr && normalsPtr !== 0)
+            ? new Float32Array(memBuffer, normalsPtr, vertexCount * 3).slice()
+            : null;
         
         // Free WASM memory
         wasm._wasm_free(dataPtr);
         
-        postMessage({
-            type: 'progress',
-            filename,
-            message: 'Creating geometry...',
-            progress: 50
-        });
-        
-        // Create Three.js geometry
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positionsCopy, 3));
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsCopy, 3));
-        
-        if (normalsCopy) {
-            geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normalsCopy, 3));
+        // Ensure colors are valid (fill white if all zeros)
+        let hasColor = false;
+        for (let i = 0; i < Math.min(colors.length, 30); i++) {
+            if (colors[i] !== 0) { hasColor = true; break; }
         }
+        if (!hasColor) colors.fill(1.0);
         
-        postMessage({
-            type: 'progress',
-            filename,
-            message: `Loaded ${vertexCount.toLocaleString()} vertices with WASM`,
-            progress: 60
-        });
+        postMessage({ type: 'progress', filename, message: `Ready: ${vertexCount.toLocaleString()} points`, progress: 80 });
         
-        return geometry;
+        return { positions, colors, normals, vertexCount, originalCount, wasDownsampled };
         
     } catch (error) {
         console.error('[WASM] Parsing error details:', error);
-        throw error; // Let the caller handle fallback
+        throw error;
     }
+}
+
+/**
+ * Calculate optimal grid size by scanning WASM position data for bounding box.
+ * Avoids creating a THREE.BufferGeometry just for bounds calculation.
+ */
+function calculateOptimalGridSizeFromWasm(wasm, vertexCount, targetPoints) {
+    const posPtr = wasm._get_positions();
+    const pos = new Float32Array(getWasmBuffer(), posPtr, vertexCount * 3);
+    
+    let minX = Infinity, minY = Infinity, minZ = Infinity;
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+    
+    // Sample every Nth point for speed (bounds don't need every point)
+    const step = Math.max(1, Math.floor(vertexCount / 100000)) * 3;
+    for (let i = 0; i < pos.length; i += step) {
+        const x = pos[i], y = pos[i + 1], z = pos[i + 2];
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+        if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+    
+    const dx = Math.max(maxX - minX, 0.001);
+    const dy = Math.max(maxY - minY, 0.001);
+    const dz = Math.max(maxZ - minZ, 0.001);
+    const volume = dx * dy * dz;
+    return Math.max(0.001, Math.pow(volume / targetPoints, 1 / 3));
 }
 
 /**
@@ -812,51 +774,27 @@ function downsampleGeometryStreaming(geometry, filename, gridSize) {
 }
 
 /**
- * Send geometry data in chunks to avoid blocking
+ * Send raw Float32Arrays in chunks (WASM fast path — no THREE.js accessors).
+ * Uses .slice() for zero-copy-friendly chunk extraction + transferable buffers.
  */
-function sendGeometryInChunks(geometry, filename, wasDownsampled) {
-    const positions = geometry.attributes.position;
-    const colors = geometry.attributes.color;
-    const normals = geometry.attributes.normal;
-    
-    const totalPoints = positions.count;
+function sendRawArraysInChunks(positions, colors, normals, filename, wasDownsampled) {
+    const totalPoints = positions.length / 3;
     let sentPoints = 0;
 
     while (sentPoints < totalPoints) {
         const chunkPoints = Math.min(CHUNK_SIZE, totalPoints - sentPoints);
-        const startIdx = sentPoints;
+        const startF = sentPoints * 3;
+        const endF = startF + chunkPoints * 3;
         const endIdx = sentPoints + chunkPoints;
 
-        // Extract chunk data
-        const chunkPositions = new Float32Array(chunkPoints * 3);
-        const chunkColors = new Float32Array(chunkPoints * 3);
-        const chunkNormals = normals ? new Float32Array(chunkPoints * 3) : null;
+        // Slice out chunk — creates a compact copy that can be transferred
+        const chunkPositions = positions.slice(startF, endF);
+        const chunkColors = colors.slice(startF, endF);
+        const chunkNormals = normals ? normals.slice(startF, endF) : null;
 
-        for (let i = 0; i < chunkPoints; i++) {
-            const srcIdx = startIdx + i;
-            
-            chunkPositions[i * 3] = positions.getX(srcIdx);
-            chunkPositions[i * 3 + 1] = positions.getY(srcIdx);
-            chunkPositions[i * 3 + 2] = positions.getZ(srcIdx);
+        const transferList = [chunkPositions.buffer, chunkColors.buffer];
+        if (chunkNormals) transferList.push(chunkNormals.buffer);
 
-            if (colors) {
-                chunkColors[i * 3] = colors.getX(srcIdx);
-                chunkColors[i * 3 + 1] = colors.getY(srcIdx);
-                chunkColors[i * 3 + 2] = colors.getZ(srcIdx);
-            } else {
-                chunkColors[i * 3] = 1;
-                chunkColors[i * 3 + 1] = 1;
-                chunkColors[i * 3 + 2] = 1;
-            }
-
-            if (chunkNormals && normals) {
-                chunkNormals[i * 3] = normals.getX(srcIdx);
-                chunkNormals[i * 3 + 1] = normals.getY(srcIdx);
-                chunkNormals[i * 3 + 2] = normals.getZ(srcIdx);
-            }
-        }
-
-        // Send chunk with transferable arrays for better performance
         postMessage({
             type: 'chunk',
             filename,
@@ -869,7 +807,80 @@ function sendGeometryInChunks(geometry, filename, wasDownsampled) {
             chunkStart: sentPoints,
             chunkEnd: endIdx,
             wasDownsampled
-        }, [chunkPositions.buffer, chunkColors.buffer, chunkNormals ? chunkNormals.buffer : null].filter(Boolean));
+        }, transferList);
+
+        sentPoints = endIdx;
+    }
+}
+
+/**
+ * Send geometry data in chunks to avoid blocking (JS fallback path)
+ */
+function sendGeometryInChunks(geometry, filename, wasDownsampled) {
+    const posAttr = geometry.attributes.position;
+    const colAttr = geometry.attributes.color;
+    const norAttr = geometry.attributes.normal;
+    
+    // Fast path: if underlying arrays are contiguous Float32Arrays, use raw sender
+    if (posAttr.array instanceof Float32Array) {
+        sendRawArraysInChunks(
+            posAttr.array,
+            colAttr ? colAttr.array : new Float32Array(posAttr.count * 3).fill(1),
+            norAttr ? norAttr.array : null,
+            filename,
+            wasDownsampled
+        );
+        return;
+    }
+
+    // Slow fallback with per-element accessors
+    const totalPoints = posAttr.count;
+    let sentPoints = 0;
+
+    while (sentPoints < totalPoints) {
+        const chunkPoints = Math.min(CHUNK_SIZE, totalPoints - sentPoints);
+        const endIdx = sentPoints + chunkPoints;
+
+        const chunkPositions = new Float32Array(chunkPoints * 3);
+        const chunkColors = new Float32Array(chunkPoints * 3);
+        const chunkNormals = norAttr ? new Float32Array(chunkPoints * 3) : null;
+
+        for (let i = 0; i < chunkPoints; i++) {
+            const s = sentPoints + i;
+            const d = i * 3;
+            chunkPositions[d] = posAttr.getX(s);
+            chunkPositions[d + 1] = posAttr.getY(s);
+            chunkPositions[d + 2] = posAttr.getZ(s);
+            if (colAttr) {
+                chunkColors[d] = colAttr.getX(s);
+                chunkColors[d + 1] = colAttr.getY(s);
+                chunkColors[d + 2] = colAttr.getZ(s);
+            } else {
+                chunkColors[d] = 1; chunkColors[d + 1] = 1; chunkColors[d + 2] = 1;
+            }
+            if (chunkNormals && norAttr) {
+                chunkNormals[d] = norAttr.getX(s);
+                chunkNormals[d + 1] = norAttr.getY(s);
+                chunkNormals[d + 2] = norAttr.getZ(s);
+            }
+        }
+
+        const transferList = [chunkPositions.buffer, chunkColors.buffer];
+        if (chunkNormals) transferList.push(chunkNormals.buffer);
+
+        postMessage({
+            type: 'chunk',
+            filename,
+            positions: chunkPositions,
+            colors: chunkColors,
+            normals: chunkNormals,
+            isFirst: sentPoints === 0,
+            isLast: endIdx >= totalPoints,
+            totalPoints,
+            chunkStart: sentPoints,
+            chunkEnd: endIdx,
+            wasDownsampled
+        }, transferList);
 
         sentPoints = endIdx;
     }
@@ -894,11 +905,18 @@ function createDefaultColors(count) {
 
 /**
  * Worker message handler
+ * Replaces the early-queue handler now that all functions are defined.
  */
-self.onmessage = function(e) {
+function handleWorkerMessage(e) {
     const { type, url, filename, centerOffset, qualityMode } = e.data;
 
     if (type === 'load') {
         loadAndProcessPLY(url, filename, centerOffset, qualityMode);
     }
-};
+}
+
+// Install the real handler and replay anything that arrived during init
+self.onmessage = handleWorkerMessage;
+for (const msg of _earlyMessages) {
+    handleWorkerMessage(msg);
+}

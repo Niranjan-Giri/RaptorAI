@@ -9,6 +9,11 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
+    headers: {
+      // Required for SharedArrayBuffer (used by Emscripten pthreads in WASM)
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8080', // Backend server URL
@@ -22,7 +27,7 @@ export default defineConfig({
     plugins: () => []
   },
   optimizeDeps: {
-    exclude: ['bin/PLY.js']
+    exclude: ['../../../bin/PLY.js']
   },
   assetsInclude: ['**/*.wasm'],
   build: {
