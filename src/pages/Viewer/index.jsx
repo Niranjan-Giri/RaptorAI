@@ -11,6 +11,7 @@ const Viewer = () => {
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(window.innerWidth > 768);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -27,6 +28,14 @@ const Viewer = () => {
     
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!isChatOpen) return;
+    const id = setTimeout(() => {
+      document.getElementById('query-input')?.focus();
+    }, 200);
+    return () => clearTimeout(id);
+  }, [isChatOpen]);
   
   useEffect(() => {
     let initTimer = null;
@@ -274,35 +283,6 @@ const Viewer = () => {
 
         <div className="section-divider"></div>
 
-        <div id="query-section">
-          <div className="section-title">QUERY</div>
-          <div className="section-content">
-            <div className="query-input-container">
-              <input
-                type="text"
-                id="query-input"
-                placeholder="Ask a question..."
-              />
-              <button
-                id="query-send-btn"
-                className="query-send-btn"
-                title="Send Query"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="section-divider"></div>
-
         <div id="object-labels-section">
           <div className="section-title">OBJECT LABELS</div>
           <div className="section-content">Object labels will appear here...</div>
@@ -330,6 +310,53 @@ const Viewer = () => {
           <button className="control-btn" id="btn-coded-color">
             Coded Color
           </button>
+        </div>
+      </div>
+
+      <div id="chat-widget" className={isChatOpen ? "open" : "closed"}>
+        <button
+          id="chat-toggle-btn"
+          className="chat-toggle-btn"
+          title={isChatOpen ? "Close chat" : "Open chat"}
+          onClick={() => setIsChatOpen(!isChatOpen)}
+        >
+          {isChatOpen ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          )}
+        </button>
+
+        <div className="chat-widget-panel" aria-hidden={!isChatOpen}>
+          <div className="chat-widget-header">Raptor AI</div>
+          <div className="chat-widget-body">
+            <div className="query-input-container">
+              <input
+                type="text"
+                id="query-input"
+                placeholder="Ask about this scene..."
+              />
+              <button
+                id="query-send-btn"
+                className="query-send-btn"
+                title="Send Query"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                </svg>
+              </button>
+            </div>
+            <div id="query-inline-messages" className="chat-widget-messages"></div>
+          </div>
         </div>
       </div>
     </div>

@@ -386,6 +386,116 @@ body
     align-items: center;
 }
 
+/* Floating chat launcher + panel */
+#chat-widget
+{
+    position: fixed;
+    left: 20px;
+    bottom: 20px;
+    z-index: 1002;
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.chat-toggle-btn
+{
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 1px solid #2e7d32;
+    background: #2e7d32;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.chat-toggle-btn:hover
+{
+    background: #388e3c;
+    border-color: #388e3c;
+    transform: translateY(-1px);
+}
+
+.chat-toggle-btn svg
+{
+    width: 24px;
+    height: 24px;
+}
+
+.chat-widget-panel
+{
+    width: 0;
+    opacity: 0;
+    transform: translateX(-6px);
+    overflow: hidden;
+    pointer-events: none;
+    border-radius: 14px;
+    background: rgba(17, 17, 17, 0.96);
+    border: 1px solid #333;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+    transition: width 0.28s ease, opacity 0.22s ease, transform 0.28s ease;
+}
+
+#chat-widget.open .chat-widget-panel
+{
+    width: min(440px, calc(100vw - 96px));
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+}
+
+.chat-widget-header
+{
+    padding: 10px 14px;
+    font-size: 12px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #9f9f9f;
+    border-bottom: 1px solid #262626;
+}
+
+.chat-widget-body
+{
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.chat-widget-messages
+{
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.chat-widget-messages::-webkit-scrollbar
+{
+    width: 4px;
+}
+
+.chat-widget-messages::-webkit-scrollbar-track
+{
+    background: transparent;
+}
+
+.chat-widget-messages::-webkit-scrollbar-thumb
+{
+    background: #2f2f2f;
+    border-radius: 3px;
+}
+
+.chat-widget-messages::-webkit-scrollbar-thumb:hover
+{
+    background: #3a3a3a;
+}
+
 .point-size-control
 {
     display: flex;
@@ -524,6 +634,22 @@ body
 @keyframes spin 
 {
     to { transform: rotate(360deg); }
+}
+
+@media (max-width: 640px)
+{
+    #chat-widget
+    {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        gap: 8px;
+    }
+
+    #chat-widget.open .chat-widget-panel
+    {
+        width: calc(100vw - 84px);
+    }
 }
 
 

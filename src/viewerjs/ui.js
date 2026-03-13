@@ -118,9 +118,12 @@ export function createUIManager(app, sceneManager, queryHandler) {
     }
 
     function showInlineQueryMessage(text, type = 'info', duration = 0) {
-        // Preferred anchor: the input container inside the query section
-        const inputContainer = document.querySelector('#query-section .section-content .query-input-container');
-        const queryContainer = inputContainer ? inputContainer.parentElement : document.querySelector('#query-section .section-content');
+        // Preferred anchor: floating chat widget; fallback to legacy query section
+        const chatMessagesContainer = document.getElementById('query-inline-messages');
+        const inputContainer = document.querySelector('#chat-widget .chat-widget-body .query-input-container')
+            || document.querySelector('#query-section .section-content .query-input-container');
+        const queryContainer = chatMessagesContainer
+            || (inputContainer ? inputContainer.parentElement : document.querySelector('#query-section .section-content'));
         if (!queryContainer) { return; }
 
         // Remove any existing message
@@ -167,8 +170,10 @@ export function createUIManager(app, sceneManager, queryHandler) {
             msg.style.color = '#fff';
         }
 
-        // insert it after the input container so it appears below; fallback to appendChild
-        if (inputContainer && inputContainer.parentElement) {
+        // In chat mode, append into dedicated message list. Otherwise place below input.
+        if (chatMessagesContainer) {
+            queryContainer.appendChild(msg);
+        } else if (inputContainer && inputContainer.parentElement) {
             inputContainer.insertAdjacentElement('afterend', msg);
         } else {
             queryContainer.appendChild(msg);
