@@ -81,7 +81,7 @@ export function createUIManager(app, sceneManager, queryHandler) {
         <div style="line-height: 1.8; color: #fff;">
             <p><strong style="color: #2196F3;">File Name:</strong> ${app.selectedFile}</p>
             <!--<p><strong style="color: #2196F3;">File Path:</strong> ${fileData.filepath}</p>-->
-            <p><strong style="color: #2196F3;">Render Mode:</strong> ${app.renderMode === 'points' ? 'Point Cloud' : '3D Mesh'}</p>
+            <p><strong style="color: #2196F3;">Render Mode:</strong> ${app.renderMode === 'points' ? 'Point Cloud' : (app.renderMode === 'mesh' ? '3D Mesh' : '3DGS')}</p>
             <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 15px 0;">
             <h3 style="color: #FF9800; margin-bottom: 10px;">Geometry</h3>
             <p><strong>Vertex Count:</strong> ${vertexCount.toLocaleString()}</p>
@@ -378,6 +378,7 @@ export function createUIManager(app, sceneManager, queryHandler) {
         safe('btn-reset', () => resetView());
         safe('btn-point-cloud', () => setRenderMode('points'));
         safe('btn-3d-mesh', () => setRenderMode('mesh'));
+        safe('btn-3dgs', () => setRenderMode('3dgs'));
         safe('btn-downsampled', () => setQualityMode('downsampled'));
         safe('btn-original-quality', () => setQualityMode('original'));
         safe('btn-original-color', () => setColorMode('original'));
@@ -423,7 +424,28 @@ export function createUIManager(app, sceneManager, queryHandler) {
 
     function setQualityMode(mode) { app.qualityMode = mode; document.getElementById('btn-downsampled')?.classList.toggle('active', mode === 'downsampled'); document.getElementById('btn-original-quality')?.classList.toggle('active', mode === 'original'); app.sceneManager.setQualityMode(mode); }
 
-    function setRenderMode(mode) { app.renderMode = mode; document.getElementById('btn-point-cloud')?.classList.toggle('active', mode === 'points'); document.getElementById('btn-3d-mesh')?.classList.toggle('active', mode === 'mesh'); app.sceneManager.setRenderMode(mode); }
+    function updateRenderModeButtons(mode) {
+        document.getElementById('btn-point-cloud')?.classList.toggle('active', mode === 'points');
+        document.getElementById('btn-3d-mesh')?.classList.toggle('active', mode === 'mesh');
+        document.getElementById('btn-3dgs')?.classList.toggle('active', mode === '3dgs');
+    }
+
+    function setRenderMode(mode) {
+        updateRenderModeButtons(mode);
+        app.renderMode = mode;
+
+        Promise.resolve(app.sceneManager.setRenderMode(mode))
+            .then((resolvedMode) => {
+                if (resolvedMode) {
+                    app.renderMode = resolvedMode;
+                }
+                updateRenderModeButtons(app.renderMode);
+            })
+            .catch((error) => {
+                console.error('Failed to switch render mode:', error);
+                updateRenderModeButtons(app.renderMode);
+            });
+    }
     
     function adjustPointSize(delta) {
         // Update base size with bounds checking

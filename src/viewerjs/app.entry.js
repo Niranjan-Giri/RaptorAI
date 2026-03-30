@@ -2,6 +2,7 @@ import '../pages/Viewer/style.css';
 import { createSceneManager } from './sceneManager.js';
 import { createUIManager } from './ui.js';
 import { createQueryHandler } from './query.js';
+import { normalizeViewerFileUrl } from './pathUtils.js';
 
 // Shared state for the app - initialize but don't create managers yet
 let app = null;
@@ -26,7 +27,12 @@ export function initializeApp() {
   }
   
   // Use default PLY files
-  let plyFiles = ["https://storage.googleapis.com/examples_ply/B3_S4.ply", "https://storage.googleapis.com/examples_ply/B3_S2.ply", "https://storage.googleapis.com/examples_ply/B3_S5.ply"];
+  let plyFiles = [
+    "https://storage.googleapis.com/examples_ply/B3_S4.ply",
+    "https://storage.googleapis.com/examples_ply/B3_S2.ply",
+    "https://storage.googleapis.com/examples_ply/B3_S5.ply",
+    "/kitchen.ply"
+  ].map((url) => normalizeViewerFileUrl(url));
   
   app = {
     plyFiles: plyFiles,

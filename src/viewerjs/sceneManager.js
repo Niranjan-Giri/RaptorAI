@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
 import { LoaderManager } from './loaderManager.js';
 import { InstanceManager } from './instanceManager.js';
+import { inferFilenameFromUrl, normalizeViewerFileUrl } from './pathUtils.js';
 
 export function createSceneManager(app, ui) {
     // app is a shared state object
@@ -94,6 +96,7 @@ export function createSceneManager(app, ui) {
     
     // Create InstanceManager for optimizing repeated objects
     app.instanceManager = new InstanceManager(app.scene);
+    app.lastTraditionalRenderMode = app.renderMode === 'mesh' ? 'mesh' : 'points';
 
     return {
         init: () => {
@@ -141,11 +144,182 @@ export function createSceneManager(app, ui) {
         // This provides consistent point density across different displays
         return baseSize * dpiCompensation * viewportScale;
     }
+
+    function showInlineMessage(text, type = 'info', duration = 4000) {
+        if (ui && ui.showInlineQueryMessage) {
+            ui.showInlineQueryMessage(text, type, duration);
+        }
+    }
+
+    function ensureSplatContainer() {
+        const canvasContainer = document.getElementById('canvas-container');
+        if (!canvasContainer) {
+            throw new Error('Canvas container not found for 3DGS rendering.');
+        }
+
+        if (window.getComputedStyle(canvasContainer).position === 'static') {
+            canvasContainer.style.position = 'relative';
+        }
+
+        if (!app.splatContainer) {
+            const splatContainer = document.createElement('div');
+            splatContainer.id = 'splat-render-container';
+            Object.assign(splatContainer.style, {
+                position: 'absolute',
+                inset: '0',
+                width: '100%',
+                height: '100%',
+                zIndex: '5',
+                display: 'none'
+            });
+            canvasContainer.appendChild(splatContainer);
+            app.splatContainer = splatContainer;
+        }
+
+        app.splatContainer.style.display = 'block';
+        app.splatContainer.innerHTML = '';
+        return app.splatContainer;
+    }
+
+    function disposeSplatViewer() {
+        if (app.splatViewer) {
+            try {
+                if (typeof app.splatViewer.stop === 'function') app.splatViewer.stop();
+                if (typeof app.splatViewer.dispose === 'function') app.splatViewer.dispose();
+                if (typeof app.splatViewer.destroy === 'function') app.splatViewer.destroy();
+            } catch (e) {
+                console.warn('[3DGS] Failed to fully dispose viewer:', e);
+            }
+        }
+        app.splatViewer = null;
+
+        if (app.splatContainer) {
+            app.splatContainer.innerHTML = '';
+            app.splatContainer.style.display = 'none';
+        }
+    }
+
+    function deactivate3DGS() {
+        disposeSplatViewer();
+        if (app.renderer && app.renderer.domElement) {
+            app.renderer.domElement.style.display = '';
+        }
+    }
+
+    function getPreferred3DGSFile() {
+        if (app.selectedFile) {
+            const selected = app.loadedFiles.get(app.selectedFile);
+            if (selected && selected.visible && selected.filepath) {
+                return { filename: app.selectedFile, filepath: selected.filepath };
+            }
+        }
+
+        for (const [filename, fileData] of app.loadedFiles.entries()) {
+            if (fileData && fileData.visible && fileData.filepath) {
+                return { filename, filepath: fileData.filepath };
+            }
+        }
+
+        return null;
+    }
+
+    function fallbackToTraditional(error, fallbackMode) {
+        const resolvedMode = fallbackMode === 'mesh' ? 'mesh' : 'points';
+        const fallbackModeName = resolvedMode === 'mesh' ? '3D Mesh' : 'Point Cloud';
+        const rawMessage = error instanceof Error ? error.message : String(error || 'Unknown error');
+        const lowerMessage = rawMessage.toLowerCase();
+        const likelyFormatIssue =
+            lowerMessage.includes('gaussian') ||
+            lowerMessage.includes('splat') ||
+            lowerMessage.includes('covariance') ||
+            lowerMessage.includes('scale_0') ||
+            lowerMessage.includes('rot_0') ||
+            lowerMessage.includes('opacity') ||
+            lowerMessage.includes('f_dc') ||
+            lowerMessage.includes('format');
+
+        deactivate3DGS();
+        app.renderMode = resolvedMode;
+        app.lastTraditionalRenderMode = resolvedMode;
+        app.loadedFiles.forEach((fileData, filename) => updateFileRender(filename));
+
+        if (likelyFormatIssue) {
+            showInlineMessage(`3DGS expects a Gaussian-splat PLY format. Falling back to ${fallbackModeName}.`, 'error', 7000);
+        } else {
+            showInlineMessage(`3DGS failed to load (${rawMessage}). Falling back to ${fallbackModeName}.`, 'error', 7000);
+        }
+
+        return resolvedMode;
+    }
+
+    async function activate3DGS(fallbackMode, requestId) {
+        const target = getPreferred3DGSFile();
+        if (!target) {
+            return fallbackToTraditional(new Error('No visible PLY file is available for 3DGS rendering.'), fallbackMode);
+        }
+
+        const normalizedTargetPath = normalizeViewerFileUrl(target.filepath);
+
+        try {
+            deactivate3DGS();
+            const splatContainer = ensureSplatContainer();
+
+            if (app.renderer && app.renderer.domElement) {
+                app.renderer.domElement.style.display = 'none';
+            }
+
+            if (app.transformControl) {
+                app.transformControl.detach();
+                app.transformControl.enabled = false;
+                app.transformControl.visible = false;
+            }
+            clearHighlights();
+
+            const viewer = new GaussianSplats3D.Viewer({
+                rootElement: splatContainer,
+                cameraUp: [0, -1, -0.6],
+                initialCameraPosition: [-1, -4, 6],
+                initialCameraLookAt: [0, 4, 0],
+                backgroundColor: [0.1, 0.1, 0.1, 1.0]
+            });
+
+            await viewer.addSplatScene(normalizedTargetPath, {
+                showLoadingUI: true
+            });
+
+            if (requestId !== app._renderModeChangeId) {
+                if (typeof viewer.stop === 'function') viewer.stop();
+                if (typeof viewer.dispose === 'function') viewer.dispose();
+                return app.renderMode;
+            }
+
+            viewer.start();
+            app.splatViewer = viewer;
+            app.renderMode = '3dgs';
+            showInlineMessage(`3DGS rendering enabled for ${target.filename}.`, 'success', 3000);
+            return '3dgs';
+        } catch (error) {
+            console.error('[3DGS] Failed to load splat scene:', error);
+            return fallbackToTraditional(error, fallbackMode);
+        }
+    }
+
     function onWindowResize() {
         app.camera.aspect = window.innerWidth / window.innerHeight;
         app.camera.updateProjectionMatrix();
         app.renderer.setPixelRatio(window.devicePixelRatio);
         app.renderer.setSize(window.innerWidth, window.innerHeight);
+
+        if (app.splatViewer) {
+            const resizeFn = app.splatViewer.onResize || app.splatViewer.onWindowResize || app.splatViewer.resize;
+            if (typeof resizeFn === 'function') {
+                try {
+                    resizeFn.call(app.splatViewer);
+                } catch (e) {
+                    console.warn('[3DGS] Resize handler failed:', e);
+                }
+            }
+        }
 
         // Update point sizes for all loaded files to maintain consistent density across screens
         if (app.renderMode === 'points') {
@@ -180,8 +354,10 @@ export function createSceneManager(app, ui) {
 
     function animate() {
         requestAnimationFrame(animate);
-        app.controls.update();
-        app.renderer.render(app.scene, app.camera);
+        if (app.renderMode !== '3dgs') {
+            app.controls.update();
+            app.renderer.render(app.scene, app.camera);
+        }
 
         // Throttle info icon updates - only update every 2 frames (30fps max)
         if (!app._frameCounter) app._frameCounter = 0;
@@ -240,7 +416,8 @@ export function createSceneManager(app, ui) {
         const usedNames = new Set();
         
         app.plyFiles.forEach((filepath, index) => {
-            let filename = filepath.split('/').pop();
+            const normalizedFilepath = normalizeViewerFileUrl(filepath);
+            let filename = inferFilenameFromUrl(normalizedFilepath, `model-${index + 1}.ply`);
             
             // Use friendly name if available (passed from Viewer/index.jsx)
             if (app.plyFileNames && app.plyFileNames[index]) {
@@ -262,11 +439,11 @@ export function createSceneManager(app, ui) {
                 visible: true,
                 originalColors: null,
                 codedColors: null,
-                filepath: filepath,
+                filepath: normalizedFilepath,
                 isPreview: true,
                 loading: true
             });
-            app.loaderManager.loadPLY(filepath, filename);
+            app.loaderManager.loadPLY(normalizedFilepath, filename);
         });
         if (ui) ui.createFileCheckboxes();
     }
@@ -302,9 +479,20 @@ export function createSceneManager(app, ui) {
         });
     }
 
-    function setRenderMode(mode) {
+    async function setRenderMode(mode) {
+        const requestId = (app._renderModeChangeId || 0) + 1;
+        app._renderModeChangeId = requestId;
+
+        if (mode === '3dgs') {
+            const fallbackMode = app.lastTraditionalRenderMode === 'mesh' ? 'mesh' : 'points';
+            return activate3DGS(fallbackMode, requestId);
+        }
+
+        app.lastTraditionalRenderMode = mode === 'mesh' ? 'mesh' : 'points';
+        deactivate3DGS();
         app.renderMode = mode;
         app.loadedFiles.forEach((fileData, filename) => updateFileRender(filename));
+        return mode;
     }
 
     function ensureGeometryHasNormals(geometry) {
@@ -374,6 +562,10 @@ export function createSceneManager(app, ui) {
         }
 
         if (!fileData.visible) return;
+
+        if (app.renderMode === '3dgs') {
+            return;
+        }
 
         if (app.renderMode === 'points') {
             const optimalSize = calculatePointSize();

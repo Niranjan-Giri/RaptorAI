@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import "./style.css";
 import { initializeApp } from "../../viewerjs/app.entry.js";
+import { normalizeViewerFileUrl } from "../../viewerjs/pathUtils.js";
 import { EXAMPLE_PLY_FILES } from "../../components/username.jsx";
 import api from "../../api";
 const Viewer = () => {
@@ -84,7 +85,7 @@ const Viewer = () => {
             const filesToLoad = location.state.files;
             
             // Set the PLY files and names
-            app.plyFiles = filesToLoad.map(f => f.url);
+            app.plyFiles = filesToLoad.map(f => normalizeViewerFileUrl(f.url));
             app.plyFileNames = filesToLoad.map(f => f.name);
             
             // Clear previously loaded files from the scene
@@ -267,6 +268,9 @@ const Viewer = () => {
           </button>
           <button className="control-btn" id="btn-3d-mesh">
             3D Mesh
+          </button>
+          <button className="control-btn" id="btn-3dgs">
+            3DGS
           </button>
         </div>
 
