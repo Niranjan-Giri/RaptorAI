@@ -31,7 +31,9 @@ export function initializeApp() {
     "https://storage.googleapis.com/examples_ply/B3_S4.ply",
     "https://storage.googleapis.com/examples_ply/B3_S2.ply",
     "https://storage.googleapis.com/examples_ply/B3_S5.ply",
-    "/kitchen.ply"
+    "classroom.ply",
+    "lobby.ply",
+    "lounge.ply"
   ].map((url) => normalizeViewerFileUrl(url));
   
   app = {

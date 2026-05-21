@@ -14,7 +14,8 @@ export function createUIManager(app, sceneManager, queryHandler) {
         ensureSceneInfoForFile,
         setupMenuControls,
         zoomIn,
-        zoomOut
+        zoomOut,
+        resetView
     };
 
     // Create initial UI elements
@@ -376,6 +377,7 @@ export function createUIManager(app, sceneManager, queryHandler) {
         safe('btn-zoom-in', () => zoomIn());
         safe('btn-zoom-out', () => zoomOut());
         safe('btn-reset', () => resetView());
+        safe('btn-recenter-3dgs', () => recenter3DGSCamera());
         safe('btn-point-cloud', () => setRenderMode('points'));
         safe('btn-3d-mesh', () => setRenderMode('mesh'));
         safe('btn-3dgs', () => setRenderMode('3dgs'));
@@ -390,6 +392,16 @@ export function createUIManager(app, sceneManager, queryHandler) {
         safe('btn-size-increase', () => adjustPointSize(0.001));
         safe('btn-size-decrease', () => adjustPointSize(-0.001));
         //----------------
+        
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Space bar: recenter 3DGS camera when stuck
+            if (e.code === 'Space' && app.renderMode === '3dgs' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                recenter3DGSCamera();
+            }
+        });
+        
         const queryInput = document.getElementById('query-input'); const querySendBtn = document.getElementById('query-send-btn'); if (querySendBtn) querySendBtn.addEventListener('click', () => { const qh = queryHandler || app.query; if (qh && qh.handleQuerySend) qh.handleQuerySend(); }); if (queryInput) queryInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { const qh = queryHandler || app.query; if (qh && qh.handleQuerySend) qh.handleQuerySend(); } });
     }
 
@@ -406,11 +418,37 @@ export function createUIManager(app, sceneManager, queryHandler) {
         }
         
         if (mode === 'orbit') {
-            document.getElementById('btn-orbit')?.classList.add('active'); app.controls.enableRotate = true; app.controls.enablePan = false; app.controls.enabled = true; app.deselectFile && app.deselectFile(); app.renderer.domElement.style.cursor = 'grab';
+            document.getElementById('btn-orbit')?.classList.add('active');
+            if (app.renderMode === '3dgs') {
+                // 3DGS has native orbit control
+                if (app.splatContainer) app.splatContainer.style.cursor = 'grab';
+                showInlineQueryMessage('Orbit: Rotate with mouse drag', 'info', 2000);
+            } else {
+                app.controls.enableRotate = true; app.controls.enablePan = false; app.controls.enabled = true;
+                app.renderer.domElement.style.cursor = 'grab';
+            }
+            app.deselectFile && app.deselectFile();
         } else if (mode === 'pan') {
-            document.getElementById('btn-pan')?.classList.add('active'); app.controls.enableRotate = false; app.controls.enablePan = true; app.controls.enabled = true; app.deselectFile && app.deselectFile(); app.renderer.domElement.style.cursor = 'move';
+            document.getElementById('btn-pan')?.classList.add('active');
+            if (app.renderMode === '3dgs') {
+                // 3DGS has native pan with shift/middle mouse
+                if (app.splatContainer) app.splatContainer.style.cursor = 'move';
+                showInlineQueryMessage('Pan: Hold Shift + Drag or Middle Mouse Drag', 'info', 2000);
+            } else {
+                app.controls.enableRotate = false; app.controls.enablePan = true; app.controls.enabled = true;
+                app.renderer.domElement.style.cursor = 'move';
+            }
+            app.deselectFile && app.deselectFile();
         } else if (mode === 'select') {
-            document.getElementById('btn-select')?.classList.add('active'); app.controls.enableRotate = false; app.controls.enablePan = false; app.controls.enabled = true; app.renderer.domElement.style.cursor = 'crosshair';
+            document.getElementById('btn-select')?.classList.add('active');
+            if (app.renderMode === '3dgs') {
+                // Select mode not applicable in 3DGS rendering
+                if (app.splatContainer) app.splatContainer.style.cursor = 'crosshair';
+                showInlineQueryMessage('Selection not available in 3DGS mode', 'info', 2000);
+            } else {
+                app.controls.enableRotate = false; app.controls.enablePan = false; app.controls.enabled = true;
+                app.renderer.domElement.style.cursor = 'crosshair';
+            }
         }
     }
 
@@ -511,9 +549,89 @@ export function createUIManager(app, sceneManager, queryHandler) {
         }
     }
 
-    function zoomIn() { app.camera.position.multiplyScalar(0.8); app.controls.update(); }
-    function zoomOut() { app.camera.position.multiplyScalar(1.2); app.controls.update(); }
-    function resetView() { app.camera.position.set(0,0,2); app.controls.target.set(0,0,0); app.controls.update(); }
+    function zoomIn() {
+        if (app.renderMode === '3dgs' && app.splatViewer) {
+            // Zoom by adjusting camera position closer to target
+            try {
+                if (app.splatViewer.camera && app.splatViewer.camera.position) {
+                    const pos = app.splatViewer.camera.position;
+                    const target = app.splatViewer.camera.target || app.splatViewer.controls?.target || new THREE.Vector3(0, 0, 0);
+                    const targetVec = new THREE.Vector3(...(Array.isArray(target) ? target : [target.x || 0, target.y || 0, target.z || 0]));
+                    const posVec = new THREE.Vector3(...(Array.isArray(pos) ? pos : [pos.x || 0, pos.y || 0, pos.z || 0]));
+                    const direction = new THREE.Vector3().subVectors(posVec, targetVec);
+                    direction.multiplyScalar(0.8);
+                    const newPos = new THREE.Vector3().addVectors(targetVec, direction);
+                    app.splatViewer.camera.position = [newPos.x, newPos.y, newPos.z];
+                }
+            } catch (e) {
+                console.warn('[3DGS] Zoom in failed:', e);
+            }
+        } else {
+            app.camera.position.multiplyScalar(0.8);
+            app.controls.update();
+        }
+    }
+    
+    function zoomOut() {
+        if (app.renderMode === '3dgs' && app.splatViewer) {
+            // Zoom by adjusting camera position farther from target
+            try {
+                if (app.splatViewer.camera && app.splatViewer.camera.position) {
+                    const pos = app.splatViewer.camera.position;
+                    const target = app.splatViewer.camera.target || app.splatViewer.controls?.target || new THREE.Vector3(0, 0, 0);
+                    const targetVec = new THREE.Vector3(...(Array.isArray(target) ? target : [target.x || 0, target.y || 0, target.z || 0]));
+                    const posVec = new THREE.Vector3(...(Array.isArray(pos) ? pos : [pos.x || 0, pos.y || 0, pos.z || 0]));
+                    const direction = new THREE.Vector3().subVectors(posVec, targetVec);
+                    direction.multiplyScalar(1.2);
+                    const newPos = new THREE.Vector3().addVectors(targetVec, direction);
+                    app.splatViewer.camera.position = [newPos.x, newPos.y, newPos.z];
+                }
+            } catch (e) {
+                console.warn('[3DGS] Zoom out failed:', e);
+            }
+        } else {
+            app.camera.position.multiplyScalar(1.2);
+            app.controls.update();
+        }
+    }
+    
+    function resetView() {
+        if (app.renderMode === '3dgs' && app.splatViewer) {
+            // Reset 3DGS camera to default view
+            try {
+                if (app.splatViewer.camera) {
+                    app.splatViewer.camera.position = [3, 2.5, 3];
+                    if (app.splatViewer.camera.target) {
+                        app.splatViewer.camera.target = [0, 0, 0];
+                    }
+                }
+            } catch (e) {
+                console.warn('[3DGS] Reset view failed:', e);
+            }
+        } else {
+            app.camera.position.set(0, 0, 2);
+            app.controls.target.set(0, 0, 0);
+            app.controls.update();
+        }
+    }
+    
+    function recenter3DGSCamera() {
+        // Force recenter the 3DGS camera to fix stuck rotation
+        if (app.renderMode !== '3dgs' || !app.splatViewer) {
+            showInlineQueryMessage('Recenter only works in 3DGS mode', 'info', 1500);
+            return;
+        }
+        
+        try {
+            if (app.sceneManager && typeof app.sceneManager.recenter3DGSCamera === 'function') {
+                app.sceneManager.recenter3DGSCamera();
+                showInlineQueryMessage('Camera recentered', 'success', 1500);
+            }
+        } catch (e) {
+            console.warn('[3DGS] Recenter failed:', e);
+            showInlineQueryMessage('Failed to recenter camera', 'error', 2000);
+        }
+    }
 
     function updateInfoIconPosition() {
         if (!app.selectedFile || !app.infoIcon) return;

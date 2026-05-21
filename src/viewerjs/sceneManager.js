@@ -118,7 +118,11 @@ export function createSceneManager(app, ui) {
         onCanvasClick: onCanvasClick,
         optimizeInstances: optimizeInstances,
         toggleInstancing: toggleInstancing,
-        getInstanceStats: getInstanceStats
+        getInstanceStats: getInstanceStats,
+        // 3DGS Camera control helpers
+        set3DGSCameraMode: set3DGSCameraMode,
+        get3DGSCameraState: get3DGSCameraState,
+        recenter3DGSCamera: recenter3DGSCamera
     };
 
     // ----------------- Implementation ------------------
@@ -169,8 +173,9 @@ export function createSceneManager(app, ui) {
                 inset: '0',
                 width: '100%',
                 height: '100%',
-                zIndex: '5',
-                display: 'none'
+                zIndex: '10',
+                display: 'none',
+                overflow: 'hidden'
             });
             canvasContainer.appendChild(splatContainer);
             app.splatContainer = splatContainer;
@@ -277,10 +282,13 @@ export function createSceneManager(app, ui) {
 
             const viewer = new GaussianSplats3D.Viewer({
                 rootElement: splatContainer,
-                cameraUp: [0, -1, -0.6],
-                initialCameraPosition: [-1, -4, 6],
-                initialCameraLookAt: [0, 4, 0],
-                backgroundColor: [0.1, 0.1, 0.1, 1.0]
+                cameraUp: [0, 1, 0],
+                initialCameraPosition: [3, 2.5, 3],
+                initialCameraLookAt: [0, 0, 0],
+                backgroundColor: [0.12, 0.12, 0.12, 1.0],
+                enableInteractionCallbacks: true,
+                // Allow full rotation without gimbal lock
+                antialiased: true
             });
 
             await viewer.addSplatScene(normalizedTargetPath, {
@@ -296,7 +304,42 @@ export function createSceneManager(app, ui) {
             viewer.start();
             app.splatViewer = viewer;
             app.renderMode = '3dgs';
-            showInlineMessage(`3DGS rendering enabled for ${target.filename}.`, 'success', 3000);
+            
+            // Configure camera controls to allow free rotation without gimbal lock
+            setTimeout(() => {
+                try {
+                    // The mkkellogg library exposes the internal OrbitControls as viewer.controls
+                    if (viewer.controls) {
+                        // Allow full vertical rotation (0 to 180 degrees).
+                        // CRITICAL: We offset by 0.01 radians to prevent the camera from hitting 
+                        // the exact mathematical pole. Hitting the exact pole (pitch = 90 degrees)
+                        // causes a zero-vector calculation in the up-vector, permanently freezing the camera.
+                        viewer.controls.minPolarAngle = 0.01;
+                        viewer.controls.maxPolarAngle = Math.PI - 0.01;
+                        
+                        // Ensure horizontal rotation is completely unbounded
+                        viewer.controls.minAzimuthAngle = -Infinity;
+                        viewer.controls.maxAzimuthAngle = Infinity;
+                        
+                        // Enable damping for smooth, natural feeling rotation
+                        if (viewer.controls.enableDamping !== undefined) {
+                            viewer.controls.enableDamping = true;
+                        }
+                        
+                        console.log('[3DGS] Camera controls configured for free rotation');
+                    }
+                } catch (e) {
+                    console.warn('[3DGS] Could not configure camera controls:', e);
+                }
+            }, 100);
+            
+            // Store the initial camera state for pan mode
+            if (viewer.camera) {
+                app._splatInitialCamPosition = viewer.camera.position.clone ? viewer.camera.position.clone() : viewer.camera.position;
+                app._splatInitialCamTarget = viewer.camera.target || [0, 0, 0];
+            }
+            
+            showInlineMessage(`3DGS rendering enabled for ${target.filename}. Use mouse to rotate, scroll to zoom.`, 'success', 3000);
             return '3dgs';
         } catch (error) {
             console.error('[3DGS] Failed to load splat scene:', error);
@@ -319,6 +362,12 @@ export function createSceneManager(app, ui) {
                     console.warn('[3DGS] Resize handler failed:', e);
                 }
             }
+            // Also try canvas resize
+            if (app.splatContainer && app.splatContainer.querySelector('canvas')) {
+                const canvas = app.splatContainer.querySelector('canvas');
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
         }
 
         // Update point sizes for all loaded files to maintain consistent density across screens
@@ -334,6 +383,8 @@ export function createSceneManager(app, ui) {
     }
 
     function onKeyDown(event) {
+        // Skip in 3DGS mode for now
+        if (app.renderMode === '3dgs') return;
         if (!app.selectedFile) return;
         switch (event.key.toLowerCase()) {
             case 'g': // Translate
@@ -905,6 +956,57 @@ export function createSceneManager(app, ui) {
             else app.cameraAnim = null;
         }
         app.cameraAnim = { raf: requestAnimationFrame(tick) };
+    }
+    
+    function set3DGSCameraMode(mode) {
+        // Set camera interaction mode for 3DGS viewer
+        if (!app.splatViewer) return;
+        if (!app.splatViewer.camera) return;
+        
+        // The GaussianSplats3D library handles interactions natively
+        // This function is a placeholder for future mode-specific camera behavior
+        // For now, just ensure controls are responsive
+    }
+    
+    function get3DGSCameraState() {
+        // Get current camera state from 3DGS viewer
+        if (!app.splatViewer && !app.splatViewer.camera) return null;
+        
+        const cam = app.splatViewer.camera;
+        return {
+            position: cam.position ? [cam.position.x, cam.position.y, cam.position.z] : null,
+            target: app.splatViewer.controls?.target ? [app.splatViewer.controls.target.x, app.splatViewer.controls.target.y, app.splatViewer.controls.target.z] : null
+        };
+    }
+    
+    function recenter3DGSCamera() {
+        // Force recenter the 3DGS camera to fix stuck rotation
+        if (!app.splatViewer || !app.splatViewer.camera) return;
+        
+        try {
+            // Reset camera to default orientation
+            app.splatViewer.camera.position = [3, 2.5, 3];
+            app.splatViewer.camera.target = [0, 0, 0];
+            
+            // Force update of camera rotation state
+            if (app.splatViewer.cameraController) {
+                // Reset any internal euler angle state
+                if (app.splatViewer.cameraController.euler) {
+                    app.splatViewer.cameraController.euler.set(0, 0, 0);
+                }
+                // Force a render update
+                if (typeof app.splatViewer.cameraController.update === 'function') {
+                    app.splatViewer.cameraController.update();
+                }
+            }
+            
+            // Trigger a render to apply changes
+            if (typeof app.splatViewer.renderOnce === 'function') {
+                app.splatViewer.renderOnce();
+            }
+        } catch (e) {
+            console.warn('[3DGS] Failed to recenter camera:', e);
+        }
     }
     
     function optimizeInstances() {
