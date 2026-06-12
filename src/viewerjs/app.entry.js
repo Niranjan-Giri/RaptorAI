@@ -28,12 +28,26 @@ export function initializeApp() {
   
   // Use default PLY files
   let plyFiles = [
-    "https://storage.googleapis.com/examples_ply/B3_S4.ply",
-    "https://storage.googleapis.com/examples_ply/B3_S2.ply",
-    "https://storage.googleapis.com/examples_ply/B3_S5.ply",
+    //"https://storage.googleapis.com/examples_ply/B3_S4.ply",
+    //"https://storage.googleapis.com/examples_ply/B3_S2.ply",
+    //"https://storage.googleapis.com/examples_ply/B3_S5.ply",
+
+    "classroom_inpainted_eval.ply",
+    "lobby_inpainted_eval.ply",
+    "lounge_inpainted_eval.ply",
+
+    "classroom_eval_normal.ply",
+    "lobby_eval_normal.ply",
+    "lounge_eval_normal.ply",
+    
+    "classroom_inpainted.ply",
+    "lobby_inpainted.ply",
+    "lounge_inpainted.ply",
+    
     "classroom.ply",
     "lobby.ply",
-    "lounge.ply"
+    "lounge.ply",  
+
   ].map((url) => normalizeViewerFileUrl(url));
   
   app = {
