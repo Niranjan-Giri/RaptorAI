@@ -4,12 +4,17 @@
  */
 
 import * as THREE from 'three';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
 export class LoaderManager {
     constructor(onFileLoaded, onFileProgress, onFileError) {
         this.onFileLoaded = onFileLoaded;
         this.onFileProgress = onFileProgress;
         this.onFileError = onFileError;
+        
+        // Initialize DRACOLoader for .drc file support
+        this.dracoLoader = new DRACOLoader();
+        this.dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
         
         this.workers = [];
         this.maxWorkers = navigator.hardwareConcurrency || 4;
@@ -32,6 +37,76 @@ export class LoaderManager {
      */
     setQualityMode(mode) {
         this.qualityMode = mode;
+    }
+
+    /**
+     * Load a DRC (Draco compressed) file
+     */
+    loadDRC(filepath, filename) {
+        return new Promise((resolve, reject) => {
+            if (!filepath) {
+                const errMsg = `[DRC] No filepath provided for '${filename}'`;
+                console.error(errMsg);
+                if (this.onFileError) this.onFileError(filename, errMsg);
+                return reject(new Error(errMsg));
+            }
+
+            if (this.onFileProgress) {
+                this.onFileProgress(filename, 'Starting DRC load...', 0);
+            }
+
+            this.dracoLoader.load(
+                filepath,
+                (geometry) => {
+                    try {
+                        // Ensure color attribute exists — default to white
+                        if (!geometry.attributes.color) {
+                            const count = geometry.attributes.position.count;
+                            const colors = new Float32Array(count * 3).fill(1.0);
+                            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+                        }
+
+                        // Ensure normals exist
+                        if (!geometry.attributes.normal) {
+                            geometry.computeVertexNormals();
+                        }
+
+                        geometry.computeBoundingBox();
+
+                        if (this.onFileLoaded) {
+                            this.onFileLoaded(filename, geometry, {
+                                isPreview: false,
+                                wasDownsampled: false,
+                                totalExpectedPoints: geometry.attributes.position.count
+                            });
+                        }
+
+                        resolve(geometry);
+                    } catch (processingError) {
+                        const errMsg = `[DRC] Error processing geometry for '${filename}': ${processingError.message}`;
+                        console.error(errMsg, processingError);
+                        if (this.onFileError) this.onFileError(filename, errMsg);
+                        reject(processingError);
+                    }
+                },
+                (progress) => {
+                    if (this.onFileProgress && progress.total > 0) {
+                        const pct = (progress.loaded / progress.total) * 100;
+                        this.onFileProgress(
+                            filename,
+                            `Loading: ${progress.loaded.toLocaleString()} / ${progress.total.toLocaleString()} bytes`,
+                            pct
+                        );
+                    }
+                },
+                (error) => {
+                    const errMsg = error?.message || String(error) || 'Unknown DRC load error';
+                    console.error(`[DRC] Failed to load '${filename}' from ${filepath}:`, errMsg);
+                    if (this.onFileError) this.onFileError(filename, errMsg);
+                    reject(new Error(errMsg));
+                }
+            );
+        });
     }
 
     /**

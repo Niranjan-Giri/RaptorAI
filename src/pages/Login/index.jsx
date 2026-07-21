@@ -25,8 +25,25 @@ export default function Login() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
+
+    //In the development process, to bypass login I am using this
+    const dummyUser = {
+      id: 1,
+      username: 'developer',
+      email: 'dev@raptorlab.com',
+      roles: ['admin', 'user'],
+    };
+
+    localStorage.setItem(USER_INFO, JSON.stringify(dummyUser));
+    localStorage.setItem('isLoggedIn', 'true');
+    localStorage.setItem('jwtToken', 'dummy-token-bypass');
+
+    navigate(`/${dummyUser.username}`);
+    //return;
+
+    //Uncomment the two lines below for deployment
+    //setLoading(true);
+    //setError('');
 
     try {
       const response = await api.post('/auth/signin/', {

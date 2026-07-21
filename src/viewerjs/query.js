@@ -71,7 +71,7 @@ export function createQueryHandler(app, sceneManager, ui) {
         if (!match) match = q.match(/count (?:the )?(\w+)s?\b/);
         if (match) {
             let object = match[1]; object = object.trim().toLowerCase(); if (object.endsWith('s')) object = object.slice(0, -1);
-            const count = filenamesLower.filter(f => f.includes(object)).length; responseData.results=[{object, count}]; responseData.columns=['object','count']; responseData.row_count=1; queryCache.set(q, responseData); return { handled: true, data: responseData };
+            const count = filenamesLower.filter(f => f.includes(object)).length; responseData.results = [{ object, count }]; responseData.columns = ['object', 'count']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData };
         }
         match = q.match(/is there (?:a|an|the )?([\w\s-]+)/);
         if (match) {
@@ -80,10 +80,10 @@ export function createQueryHandler(app, sceneManager, ui) {
             if (app.sceneInfo && app.sceneInfo._map) {
                 const lower = object.toLowerCase(); const entry = app.sceneInfo._map.get(lower); exists = Boolean(entry) || sceneFiles.some(f => f.filename.toLowerCase().includes(lower));
                 if (entry) {
-                    responseData.results = [{ object, exists: true, filename: entry.filename }]; responseData.columns=['object','exists','filename']; responseData.row_count=1; queryCache.set(q, responseData); return { handled: true, data: responseData };
+                    responseData.results = [{ object, exists: true, filename: entry.filename }]; responseData.columns = ['object', 'exists', 'filename']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData };
                 }
             }
-            responseData.results = [{ object, exists }]; responseData.columns = ['object','exists']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData };
+            responseData.results = [{ object, exists }]; responseData.columns = ['object', 'exists']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData };
         }
         match = q.match(/where is (?:a|an|the )?([\w\s-]+)/);
         if (match) {
@@ -92,18 +92,18 @@ export function createQueryHandler(app, sceneManager, ui) {
                 const lower = object.toLowerCase(); let entry = app.sceneInfo._map.get(lower);
                 if (!entry) { for (const [k, v] of app.sceneInfo._map.entries()) { if (k.includes(lower) || lower.includes(k)) { entry = v; break; } } }
                 if (entry) {
-                    let center = [0,0,0]; let size = [1,1,1];
+                    let center = [0, 0, 0]; let size = [1, 1, 1];
                     if (entry.filename) {
                         const f = sceneFiles.find(ff => ff.filename.toLowerCase().includes(String(entry.filename).toLowerCase())); if (f) { center = f.bbox.center; size = f.bbox.size; }
                     }
                     const bboxInfo = app.sceneInfo.bounding_box && app.sceneInfo.bounding_box[entry.key]; if (bboxInfo) size = [bboxInfo.x || size[0], bboxInfo.y || size[1], bboxInfo.z || size[2]];
-                    responseData.results=[{ object: entry.key, center, size, filename: entry.filename }]; responseData.columns = ['object','center','size']; responseData.row_count=1; queryCache.set(q, responseData); return { handled: true, data: responseData };
-                } else { responseData.results=[{ object, exists: false }]; responseData.columns=['object','exists']; responseData.row_count=1; queryCache.set(q, responseData); return { handled: true, data: responseData }; }
-            } else { let file = sceneFiles.find(f => f.filename.toLowerCase().includes(object)); if (file) { responseData.results=[{ object, center: file.bbox.center, size: file.bbox.size, filename: file.filename }]; responseData.columns=['object','center','size']; responseData.row_count=1; queryCache.set(q, responseData); return { handled: true, data: responseData }; } }
+                    responseData.results = [{ object: entry.key, center, size, filename: entry.filename }]; responseData.columns = ['object', 'center', 'size']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData };
+                } else { responseData.results = [{ object, exists: false }]; responseData.columns = ['object', 'exists']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData }; }
+            } else { let file = sceneFiles.find(f => f.filename.toLowerCase().includes(object)); if (file) { responseData.results = [{ object, center: file.bbox.center, size: file.bbox.size, filename: file.filename }]; responseData.columns = ['object', 'center', 'size']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData }; } }
         }
         match = q.match(/vertex count (?:of )?(?:the )?([\w\s-]+)|how many vertices (?:in|for) ([\w\s-]+)/);
         if (match) {
-            const object = (match[1] || match[2] || '').trim().toLowerCase(); const file = sceneFiles.find(f => f.filename.toLowerCase().includes(object)); if (file) { responseData.results=[{ object: file.filename, vertex_count: file.vertex_count }]; responseData.columns=['object','vertex_count']; responseData.row_count=1; queryCache.set(q, responseData); return { handled: true, data: responseData }; }
+            const object = (match[1] || match[2] || '').trim().toLowerCase(); const file = sceneFiles.find(f => f.filename.toLowerCase().includes(object)); if (file) { responseData.results = [{ object: file.filename, vertex_count: file.vertex_count }]; responseData.columns = ['object', 'vertex_count']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData }; }
         }
         return { handled: false };
     }
@@ -132,7 +132,7 @@ export function createQueryHandler(app, sceneManager, ui) {
             context.calculated_distances = [];
             const qLower = question.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, " "); // Replace punctuation with space
             const qTokens = new Set(qLower.split(/\s+/));
-            
+
             // Helper to check if file is mentioned
             const getMentionedFiles = () => {
                 const mentioned = new Set();
@@ -144,7 +144,7 @@ export function createQueryHandler(app, sceneManager, ui) {
                     // Strategy 1: Exact match of filename or no-ext (relaxed spaces)
                     // "B3_S4" -> matches "b3_s4" or "b3 s4"
                     const relaxedName = fnameNoExt.replace(/[_-\s]+/g, ' ');
-                    
+
                     if (qLower.includes(fname) || qLower.includes(fnameNoExt) || qLower.includes(relaxedName)) {
                         mentioned.add(f);
                         return;
@@ -167,7 +167,7 @@ export function createQueryHandler(app, sceneManager, ui) {
             };
 
             const targetFiles = getMentionedFiles();
-            
+
             // If the query specifically asks for distance/far/close AND targets found
             const distKeywords = ['distance', 'dist', 'far', 'close', 'near', 'between'];
             const isDistanceQuery = distKeywords.some(k => qLower.includes(k));
@@ -225,7 +225,7 @@ export function createQueryHandler(app, sceneManager, ui) {
             - For relative movements (left, right, etc.), use reasonable default amounts like 1 or 2 units if not specified.
             - IMPORTANT MEMORY RULE: if user says pronouns like "it", "that", "this", "them", resolve to context.lastReferencedObject when available.`;
             /****************************************************************** */
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
             const response = await fetch(url, {
                 method: 'POST',
@@ -243,7 +243,7 @@ export function createQueryHandler(app, sceneManager, ui) {
 
             const data = await response.json();
             const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate an answer.";
-            
+
             return { handled: true, answer: answer };
 
         } catch (error) {
@@ -259,7 +259,7 @@ export function createQueryHandler(app, sceneManager, ui) {
         if (app.loadedFiles.has(targetFilename)) {
             return targetFilename;
         }
-        
+
         // Try case-insensitive match
         const targetLower = targetFilename.toLowerCase();
         for (const [filename, fileData] of app.loadedFiles.entries()) {
@@ -267,14 +267,14 @@ export function createQueryHandler(app, sceneManager, ui) {
                 return filename;
             }
         }
-        
+
         // Try partial match (includes)
         for (const [filename, fileData] of app.loadedFiles.entries()) {
             if (filename.toLowerCase().includes(targetLower) || targetLower.includes(filename.toLowerCase())) {
                 return filename;
             }
         }
-        
+
         // Try matching without extension
         const targetNoExt = targetFilename.replace(/\.ply$/i, '');
         for (const [filename, fileData] of app.loadedFiles.entries()) {
@@ -283,7 +283,7 @@ export function createQueryHandler(app, sceneManager, ui) {
                 return filename;
             }
         }
-        
+
         return null;
     }
 
@@ -327,7 +327,7 @@ export function createQueryHandler(app, sceneManager, ui) {
             return;
         }
         queryInput.value = '';
-        
+
         // UX: Show "Thinking..." state
         isQueryInFlight = true;
         if (querySendBtn) {
@@ -338,180 +338,180 @@ export function createQueryHandler(app, sceneManager, ui) {
         if (ui) ui.showInlineQueryMessage('Thinking...', 'info');
 
         try {
-                currentAbortController = new AbortController();
-                // Gemini AI Only Mode
-                const sceneFiles = getSceneMetadata();
-                const contextualQuery = enrichQuestionWithSessionReference(query);
-                const aiResponse = await geminiQueryHandler(contextualQuery, sceneFiles, currentAbortController.signal);
-                
-                if (aiResponse.handled && !aiResponse.error && aiResponse.answer && aiResponse.answer !== "I couldn't generate an answer.") {
-                    const rawAnswer = aiResponse.answer;
-                    
-                    // Parse Actions
-                    let userDisplayMessage = rawAnswer;
-                    
-                    // Check for ZOOM_IN
-                    if (rawAnswer.includes('[ACTION:ZOOM_IN]')) {
-                        if (ui && ui.zoomIn) ui.zoomIn();
-                        userDisplayMessage = userDisplayMessage.replace(/\[ACTION:ZOOM_IN\]/g, '');
-                    }
-                    
-                    // Check for ZOOM_OUT
-                    if (rawAnswer.includes('[ACTION:ZOOM_OUT]')) {
-                        if (ui && ui.zoomOut) ui.zoomOut();
-                        userDisplayMessage = userDisplayMessage.replace(/\[ACTION:ZOOM_OUT\]/g, '');
-                    }
+            currentAbortController = new AbortController();
+            // Gemini AI Only Mode
+            const sceneFiles = getSceneMetadata();
+            const contextualQuery = enrichQuestionWithSessionReference(query);
+            const aiResponse = await geminiQueryHandler(contextualQuery, sceneFiles, currentAbortController.signal);
 
-                    const hideMatches = [...rawAnswer.matchAll(/\[ACTION:HIDE:'(.*?)'\]/g)];
-                    for (const match of hideMatches) {
-                        const targetFilename = match[1];
-                        const actualFilename = findMatchingFilename(targetFilename);
-                        if (actualFilename && sceneManager && sceneManager.toggleFileVisibility) {
-                            sceneManager.toggleFileVisibility(actualFilename, false);
-                            lastReferencedFilename = actualFilename;
-                        }
-                        userDisplayMessage = userDisplayMessage.replace(match[0], '');
-                    }
+            if (aiResponse.handled && !aiResponse.error && aiResponse.answer && aiResponse.answer !== "I couldn't generate an answer.") {
+                const rawAnswer = aiResponse.answer;
 
-            
-                    const showMatches = [...rawAnswer.matchAll(/\[ACTION:SHOW:'(.*?)'\]/g)];
-                    for (const match of showMatches) {
-                        const targetFilename = match[1];
-                        const actualFilename = findMatchingFilename(targetFilename);
-                        if (actualFilename && sceneManager && sceneManager.toggleFileVisibility) {
-                            sceneManager.toggleFileVisibility(actualFilename, true);
-                            lastReferencedFilename = actualFilename;
-                        }
-                        userDisplayMessage = userDisplayMessage.replace(match[0], '');
-                    }
+                // Parse Actions
+                let userDisplayMessage = rawAnswer;
 
-                    // Update UI checkboxes after all show/hide operations
-                    if ((hideMatches.length > 0 || showMatches.length > 0) && ui && ui.createFileCheckboxes) {
-                        ui.createFileCheckboxes();
-                    }
-
-                    // Check for MOVE object (relative)
-                    const moveMatch = rawAnswer.match(/\[ACTION:MOVE:'(.*?)':'(.*?)':([-\d.]+)\]/);
-                    if (moveMatch && moveMatch[1] && moveMatch[2] && moveMatch[3]) {
-                        const filename = moveMatch[1];
-                        const direction = moveMatch[2].toLowerCase();
-                        const amount = parseFloat(moveMatch[3]);
-                        
-                        const fileData = app.loadedFiles.get(filename);
-                        if (fileData && fileData.object) {
-                            lastReferencedFilename = filename;
-                            const obj = fileData.object;
-                            switch (direction) {
-                                case 'left':
-                                    obj.position.x -= amount;
-                                    break;
-                                case 'right':
-                                    obj.position.x += amount;
-                                    break;
-                                case 'up':
-                                    obj.position.y += amount;
-                                    break;
-                                case 'down':
-                                    obj.position.y -= amount;
-                                    break;
-                                case 'forward':
-                                    obj.position.z -= amount;
-                                    break;
-                                case 'back':
-                                    obj.position.z += amount;
-                                    break;
-                            }
-                            obj.updateMatrixWorld(true);
-                            // Invalidate bbox cache
-                            fileData._cachedBBox = null;
-                        }
-                        userDisplayMessage = userDisplayMessage.replace(moveMatch[0], '');
-                    }
-
-                    // Check for POSITION object (absolute)
-                    const posMatch = rawAnswer.match(/\[ACTION:POSITION:'(.*?)':([-\d.]+):([-\d.]+):([-\d.]+)\]/);
-                    if (posMatch && posMatch[1]) {
-                        const filename = posMatch[1];
-                        const x = parseFloat(posMatch[2]);
-                        const y = parseFloat(posMatch[3]);
-                        const z = parseFloat(posMatch[4]);
-                        
-                        const fileData = app.loadedFiles.get(filename);
-                        if (fileData && fileData.object) {
-                            lastReferencedFilename = filename;
-                            fileData.object.position.set(x, y, z);
-                            fileData.object.updateMatrixWorld(true);
-                            // Invalidate bbox cache
-                            fileData._cachedBBox = null;
-                        }
-                        userDisplayMessage = userDisplayMessage.replace(posMatch[0], '');
-                    }
-
-                    // Check for ROTATE object
-                    const rotateMatch = rawAnswer.match(/\[ACTION:ROTATE:'(.*?)':'(.*?)':([-\d.]+)\]/);
-                    if (rotateMatch && rotateMatch[1] && rotateMatch[2] && rotateMatch[3]) {
-                        const filename = rotateMatch[1];
-                        const axis = rotateMatch[2].toLowerCase();
-                        const degrees = parseFloat(rotateMatch[3]);
-                        const radians = (degrees * Math.PI) / 180;
-                        
-                        const fileData = app.loadedFiles.get(filename);
-                        if (fileData && fileData.object) {
-                            lastReferencedFilename = filename;
-                            const obj = fileData.object;
-                            switch (axis) {
-                                case 'x':
-                                    obj.rotation.x += radians;
-                                    break;
-                                case 'y':
-                                    obj.rotation.y += radians;
-                                    break;
-                                case 'z':
-                                    obj.rotation.z += radians;
-                                    break;
-                            }
-                            obj.updateMatrixWorld(true);
-                            // Invalidate bbox cache
-                            fileData._cachedBBox = null;
-                        }
-                        userDisplayMessage = userDisplayMessage.replace(rotateMatch[0], '');
-                    }
-                    
-                    // Display cleaned message
-                    if (ui) ui.showInlineQueryMessage(userDisplayMessage.trim(), 'assistant');
-                    addHistory('assistant', userDisplayMessage.trim());
-
-                    const filenameFromAnswer = detectFilenameMention(userDisplayMessage);
-                    if (filenameFromAnswer) lastReferencedFilename = filenameFromAnswer;
-                    
-                    // Optional: Try to detect filename in AI response to highlight only if NOT hiding
-                    if (hideMatches.length === 0) {
-                        const potentialFiles = sceneFiles.map(f => f.filename);
-                        for (const file of potentialFiles) {
-                            // Simple check if filename appears in the answer
-                            if (userDisplayMessage.includes(file)) {
-                                // trigger highlight if exact match found
-                                const f = app.loadedFiles.get(file);
-                                if (f && f.geometry && f.visible) { // Only highlight if visible
-                                    f.geometry.computeBoundingBox();
-                                    const center = f.geometry.boundingBox.getCenter(new THREE.Vector3()).toArray();
-                                    const size = f.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
-                                    sceneManager.createHighlightBox({ name: file, filename: file, center, size });
-                                }
-                            }
-                        }
-                    }
-
-                 } else if (aiResponse.aborted) {
-                     if (ui) ui.showInlineQueryMessage('Response paused. You can send another message.', 'info');
-                     addHistory('assistant', 'Response paused by user.');
-                 } else if (aiResponse.error === 'Gemini API Key not configured') {
-                     if (ui) ui.showInlineQueryMessage('Query not understood. Configure Gemini API Key to enable AI.', 'error');
-                     addHistory('assistant', 'Gemini API Key not configured.');
-                } else {
-                     if (ui) ui.showInlineQueryMessage('No answer found.', 'error');
-                     addHistory('assistant', 'No answer found.');
+                // Check for ZOOM_IN
+                if (rawAnswer.includes('[ACTION:ZOOM_IN]')) {
+                    if (ui && ui.zoomIn) ui.zoomIn();
+                    userDisplayMessage = userDisplayMessage.replace(/\[ACTION:ZOOM_IN\]/g, '');
                 }
+
+                // Check for ZOOM_OUT
+                if (rawAnswer.includes('[ACTION:ZOOM_OUT]')) {
+                    if (ui && ui.zoomOut) ui.zoomOut();
+                    userDisplayMessage = userDisplayMessage.replace(/\[ACTION:ZOOM_OUT\]/g, '');
+                }
+
+                const hideMatches = [...rawAnswer.matchAll(/\[ACTION:HIDE:'(.*?)'\]/g)];
+                for (const match of hideMatches) {
+                    const targetFilename = match[1];
+                    const actualFilename = findMatchingFilename(targetFilename);
+                    if (actualFilename && sceneManager && sceneManager.toggleFileVisibility) {
+                        sceneManager.toggleFileVisibility(actualFilename, false);
+                        lastReferencedFilename = actualFilename;
+                    }
+                    userDisplayMessage = userDisplayMessage.replace(match[0], '');
+                }
+
+
+                const showMatches = [...rawAnswer.matchAll(/\[ACTION:SHOW:'(.*?)'\]/g)];
+                for (const match of showMatches) {
+                    const targetFilename = match[1];
+                    const actualFilename = findMatchingFilename(targetFilename);
+                    if (actualFilename && sceneManager && sceneManager.toggleFileVisibility) {
+                        sceneManager.toggleFileVisibility(actualFilename, true);
+                        lastReferencedFilename = actualFilename;
+                    }
+                    userDisplayMessage = userDisplayMessage.replace(match[0], '');
+                }
+
+                // Update UI checkboxes after all show/hide operations
+                if ((hideMatches.length > 0 || showMatches.length > 0) && ui && ui.createFileCheckboxes) {
+                    ui.createFileCheckboxes();
+                }
+
+                // Check for MOVE object (relative)
+                const moveMatch = rawAnswer.match(/\[ACTION:MOVE:'(.*?)':'(.*?)':([-\d.]+)\]/);
+                if (moveMatch && moveMatch[1] && moveMatch[2] && moveMatch[3]) {
+                    const filename = moveMatch[1];
+                    const direction = moveMatch[2].toLowerCase();
+                    const amount = parseFloat(moveMatch[3]);
+
+                    const fileData = app.loadedFiles.get(filename);
+                    if (fileData && fileData.object) {
+                        lastReferencedFilename = filename;
+                        const obj = fileData.object;
+                        switch (direction) {
+                            case 'left':
+                                obj.position.x -= amount;
+                                break;
+                            case 'right':
+                                obj.position.x += amount;
+                                break;
+                            case 'up':
+                                obj.position.y += amount;
+                                break;
+                            case 'down':
+                                obj.position.y -= amount;
+                                break;
+                            case 'forward':
+                                obj.position.z -= amount;
+                                break;
+                            case 'back':
+                                obj.position.z += amount;
+                                break;
+                        }
+                        obj.updateMatrixWorld(true);
+                        // Invalidate bbox cache
+                        fileData._cachedBBox = null;
+                    }
+                    userDisplayMessage = userDisplayMessage.replace(moveMatch[0], '');
+                }
+
+                // Check for POSITION object (absolute)
+                const posMatch = rawAnswer.match(/\[ACTION:POSITION:'(.*?)':([-\d.]+):([-\d.]+):([-\d.]+)\]/);
+                if (posMatch && posMatch[1]) {
+                    const filename = posMatch[1];
+                    const x = parseFloat(posMatch[2]);
+                    const y = parseFloat(posMatch[3]);
+                    const z = parseFloat(posMatch[4]);
+
+                    const fileData = app.loadedFiles.get(filename);
+                    if (fileData && fileData.object) {
+                        lastReferencedFilename = filename;
+                        fileData.object.position.set(x, y, z);
+                        fileData.object.updateMatrixWorld(true);
+                        // Invalidate bbox cache
+                        fileData._cachedBBox = null;
+                    }
+                    userDisplayMessage = userDisplayMessage.replace(posMatch[0], '');
+                }
+
+                // Check for ROTATE object
+                const rotateMatch = rawAnswer.match(/\[ACTION:ROTATE:'(.*?)':'(.*?)':([-\d.]+)\]/);
+                if (rotateMatch && rotateMatch[1] && rotateMatch[2] && rotateMatch[3]) {
+                    const filename = rotateMatch[1];
+                    const axis = rotateMatch[2].toLowerCase();
+                    const degrees = parseFloat(rotateMatch[3]);
+                    const radians = (degrees * Math.PI) / 180;
+
+                    const fileData = app.loadedFiles.get(filename);
+                    if (fileData && fileData.object) {
+                        lastReferencedFilename = filename;
+                        const obj = fileData.object;
+                        switch (axis) {
+                            case 'x':
+                                obj.rotation.x += radians;
+                                break;
+                            case 'y':
+                                obj.rotation.y += radians;
+                                break;
+                            case 'z':
+                                obj.rotation.z += radians;
+                                break;
+                        }
+                        obj.updateMatrixWorld(true);
+                        // Invalidate bbox cache
+                        fileData._cachedBBox = null;
+                    }
+                    userDisplayMessage = userDisplayMessage.replace(rotateMatch[0], '');
+                }
+
+                // Display cleaned message
+                if (ui) ui.showInlineQueryMessage(userDisplayMessage.trim(), 'assistant');
+                addHistory('assistant', userDisplayMessage.trim());
+
+                const filenameFromAnswer = detectFilenameMention(userDisplayMessage);
+                if (filenameFromAnswer) lastReferencedFilename = filenameFromAnswer;
+
+                // Optional: Try to detect filename in AI response to highlight only if NOT hiding
+                if (hideMatches.length === 0) {
+                    const potentialFiles = sceneFiles.map(f => f.filename);
+                    for (const file of potentialFiles) {
+                        // Simple check if filename appears in the answer
+                        if (userDisplayMessage.includes(file)) {
+                            // trigger highlight if exact match found
+                            const f = app.loadedFiles.get(file);
+                            if (f && f.geometry && f.visible) { // Only highlight if visible
+                                f.geometry.computeBoundingBox();
+                                const center = f.geometry.boundingBox.getCenter(new THREE.Vector3()).toArray();
+                                const size = f.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
+                                sceneManager.createHighlightBox({ name: file, filename: file, center, size });
+                            }
+                        }
+                    }
+                }
+
+            } else if (aiResponse.aborted) {
+                if (ui) ui.showInlineQueryMessage('Response paused. You can send another message.', 'info');
+                addHistory('assistant', 'Response paused by user.');
+            } else if (aiResponse.error === 'Gemini API Key not configured') {
+                if (ui) ui.showInlineQueryMessage('Query not understood. Configure Gemini API Key to enable AI.', 'error');
+                addHistory('assistant', 'Gemini API Key not configured.');
+            } else {
+                if (ui) ui.showInlineQueryMessage('No answer found.', 'error');
+                addHistory('assistant', 'No answer found.');
+            }
             /*
             }
             */

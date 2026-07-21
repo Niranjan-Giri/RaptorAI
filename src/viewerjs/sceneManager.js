@@ -494,7 +494,14 @@ export function createSceneManager(app, ui) {
                 isPreview: true,
                 loading: true
             });
-            app.loaderManager.loadPLY(normalizedFilepath, filename);
+            // Route to the correct loader based on file extension
+            // Strip query params first (signed GCS URLs have long signatures)
+            const urlPath = normalizedFilepath.split('?')[0];
+            if (urlPath.toLowerCase().endsWith('.drc')) {
+                app.loaderManager.loadDRC(normalizedFilepath, filename);
+            } else {
+                app.loaderManager.loadPLY(normalizedFilepath, filename);
+            }
         });
         if (ui) ui.createFileCheckboxes();
     }
@@ -525,7 +532,12 @@ export function createSceneManager(app, ui) {
         // that were established in loadAllPLYFiles (checking for friendly names/deduplication)
         app.loadedFiles.forEach((fileData, filename) => {
             if (fileData.filepath) {
-                app.loaderManager.loadPLY(fileData.filepath, filename);
+                const urlPath = fileData.filepath.split('?')[0];
+                if (urlPath.toLowerCase().endsWith('.drc')) {
+                    app.loaderManager.loadDRC(fileData.filepath, filename);
+                } else {
+                    app.loaderManager.loadPLY(fileData.filepath, filename);
+                }
             }
         });
     }
