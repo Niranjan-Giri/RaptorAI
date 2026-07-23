@@ -277,6 +277,24 @@ const Viewer = () => {
         <div className="section-divider"></div>
 
         <div className="control-group">
+          <div className="control-label">ADD FILE</div>
+          <input 
+            type="file" 
+            id="file-input-upload" 
+            accept=".ply,.drc" 
+            style={{ display: 'none' }} 
+          />
+          <button 
+            className="control-btn" 
+            id="btn-browse-file"
+            style={{ padding: '8px', cursor: 'pointer' }}
+          >
+            Browse File (.ply, .drc)
+          </button>
+        </div>
+
+        <div className="section-divider"></div>
+        <div className="control-group">
           <div className="control-label">POINT SIZE</div>
           <div className="point-size-control">
             <button className="size-btn" id="btn-size-decrease" title="Decrease Point Size">-</button>

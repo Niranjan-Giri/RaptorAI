@@ -393,6 +393,58 @@ export function createUIManager(app, sceneManager, queryHandler) {
         safe('btn-size-decrease', () => adjustPointSize(-0.001));
         //----------------
         
+        safe('btn-browse-file', () => {
+            const input = document.getElementById('file-input-upload');
+            if (input) input.click();
+        });
+
+        const fileInput = document.getElementById('file-input-upload');
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                    const file = e.target.files[0];
+                    const fileUrl = URL.createObjectURL(file);
+                    
+                    // Ensure unique filename
+                    let filename = file.name;
+                    let uniqueName = filename;
+                    let counter = 1;
+                    while (app.loadedFiles.has(uniqueName)) {
+                        uniqueName = `${filename} (${counter++})`;
+                    }
+                    filename = uniqueName;
+
+                    if (!app.plyFiles) app.plyFiles = [];
+                    app.plyFiles.push(fileUrl);
+                    if (!app.plyFileNames) app.plyFileNames = [];
+                    app.plyFileNames.push(filename);
+                    
+                    app.loadedFiles.set(filename, {
+                        geometry: null,
+                        object: null,
+                        visible: true,
+                        originalColors: null,
+                        codedColors: null,
+                        filepath: fileUrl,
+                        isPreview: true,
+                        loading: true
+                    });
+                    
+                    const urlPath = filename; // Check extension based on original filename
+                    if (urlPath.toLowerCase().endsWith('.drc')) {
+                        app.loaderManager.loadDRC(fileUrl, filename);
+                    } else {
+                        app.loaderManager.loadPLY(fileUrl, filename);
+                    }
+                    
+                    if (app.ui && app.ui.createFileCheckboxes) app.ui.createFileCheckboxes();
+                    
+                    // Reset input
+                    e.target.value = '';
+                }
+            });
+        }
+        
         // Add keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             // Space bar: recenter 3DGS camera when stuck

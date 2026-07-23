@@ -11,12 +11,12 @@ export class LoaderManager {
         this.onFileLoaded = onFileLoaded;
         this.onFileProgress = onFileProgress;
         this.onFileError = onFileError;
-        
+
         // Initialize DRACOLoader for .drc file support
         this.dracoLoader = new DRACOLoader();
         this.dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
         console.log('%c[DRACO] DRACOLoader initialized — decoder path: https://www.gstatic.com/draco/versioned/decoders/1.5.7/', 'color: #00e5ff; font-weight: bold;');
-        
+
         this.workers = [];
         this.maxWorkers = navigator.hardwareConcurrency || 4;
         this.activeLoads = new Map(); // filename -> {geometry chunks, worker}
@@ -24,7 +24,7 @@ export class LoaderManager {
         this.pendingUpdates = new Map(); // Throttle updates per file
         this.updateInterval = 500; // Minimum ms between updates
         this.qualityMode = 'downsampled'; // 'downsampled' or 'original'
-        
+
         // Buffer reuse pool to avoid repeated allocations
         this.bufferPool = {
             positions: [],
@@ -261,7 +261,7 @@ export class LoaderManager {
         // If this is the first chunk, immediately create preview geometry
         if (isFirst) {
             const previewGeometry = this.createGeometryFromChunks([loadState.chunks[0]]);
-            
+
             if (this.onFileLoaded) {
                 this.onFileLoaded(filename, previewGeometry, {
                     isPreview: !isLast,
@@ -269,7 +269,7 @@ export class LoaderManager {
                     wasDownsampled
                 });
             }
-            
+
             // Mark the last update time
             this.pendingUpdates.set(filename, Date.now());
         }
@@ -288,7 +288,7 @@ export class LoaderManager {
         if (!isFirst && !isLast) {
             const lastUpdate = this.pendingUpdates.get(filename) || 0;
             const now = Date.now();
-            
+
             if (now - lastUpdate >= this.updateInterval) {
                 // Schedule update during idle time to avoid blocking interactions
                 this.scheduleIdleUpdate(filename, loadState, totalPoints, wasDownsampled);
@@ -304,18 +304,18 @@ export class LoaderManager {
     scheduleIdleUpdate(filename, loadState, totalPoints, wasDownsampled) {
         // Use requestIdleCallback if available, otherwise setTimeout
         const scheduleFunc = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
-        
+
         scheduleFunc(() => {
             // Check if load is still active
             if (!this.activeLoads.has(filename)) return;
-            
+
             // If existing geometry exists, grow it incrementally
             if (loadState.currentGeometry && loadState.lastChunkIndex !== undefined) {
                 const newChunks = loadState.chunks.slice(loadState.lastChunkIndex);
                 if (newChunks.length > 0) {
                     this.growGeometryWithChunks(loadState.currentGeometry, newChunks);
                     loadState.lastChunkIndex = loadState.chunks.length;
-                    
+
                     if (this.onFileLoaded) {
                         this.onFileLoaded(filename, loadState.currentGeometry, {
                             isPreview: true,
@@ -331,7 +331,7 @@ export class LoaderManager {
                 const incrementalGeometry = this.createGeometryFromChunks(loadState.chunks);
                 loadState.currentGeometry = incrementalGeometry;
                 loadState.lastChunkIndex = loadState.chunks.length;
-                
+
                 if (this.onFileLoaded) {
                     this.onFileLoaded(filename, incrementalGeometry, {
                         isPreview: true,
@@ -343,46 +343,46 @@ export class LoaderManager {
             }
         }, { timeout: 100 });
     }
-    
+
     /**
      * Grow existing geometry with new chunks using exponential growth strategy
      * Uses ArrayBuffer views to avoid unnecessary copies
      */
     growGeometryWithChunks(geometry, newChunks) {
         if (newChunks.length === 0) return;
-        
+
         const posAttr = geometry.attributes.position;
         const colorAttr = geometry.attributes.color;
         const normalAttr = geometry.attributes.normal;
-        
+
         // Calculate new total size
         let newPointsCount = 0;
         for (const chunk of newChunks) {
             newPointsCount += chunk.positions.length / 3;
         }
-        
+
         const oldCount = posAttr.count;
         const newTotalCount = oldCount + newPointsCount;
         const newTotalSize = newTotalCount * 3;
-        
+
         // Get or initialize growth metadata
         if (!geometry.userData.bufferCapacity) {
             // First growth - initialize metadata
             geometry.userData.bufferCapacity = posAttr.array.length;
             geometry.userData.bufferCount = oldCount;
         }
-        
+
         const currentCapacity = geometry.userData.bufferCapacity;
-        
+
         // Check if we need to grow the underlying buffers
         let newPositions, newColors, newNormals;
-        
+
         if (newTotalSize <= currentCapacity) {
             // We have enough capacity - reuse existing ArrayBuffer with new view
             newPositions = new Float32Array(posAttr.array.buffer, 0, newTotalSize);
             newColors = new Float32Array(colorAttr.array.buffer, 0, newTotalSize);
             newNormals = normalAttr ? new Float32Array(normalAttr.array.buffer, 0, newTotalSize) : null;
-            
+
             // Append new chunks at the end
             let offset = oldCount * 3;
             for (const chunk of newChunks) {
@@ -396,19 +396,19 @@ export class LoaderManager {
         } else {
             // Need to grow - use exponential growth (2x strategy)
             const newCapacity = Math.max(newTotalSize, currentCapacity * 2);
-            
+
             // Allocate new buffers with extra capacity
             newPositions = new Float32Array(newCapacity);
             newColors = new Float32Array(newCapacity);
             newNormals = normalAttr ? new Float32Array(newCapacity) : null;
-            
+
             // Copy existing data
             newPositions.set(posAttr.array.subarray(0, oldCount * 3));
             newColors.set(colorAttr.array.subarray(0, oldCount * 3));
             if (newNormals && normalAttr) {
                 newNormals.set(normalAttr.array.subarray(0, oldCount * 3));
             }
-            
+
             // Append new chunks
             let offset = oldCount * 3;
             for (const chunk of newChunks) {
@@ -419,25 +419,25 @@ export class LoaderManager {
                 }
                 offset += chunk.positions.length;
             }
-            
+
             // Create views for the actual used portion
             newPositions = new Float32Array(newPositions.buffer, 0, newTotalSize);
             newColors = new Float32Array(newColors.buffer, 0, newTotalSize);
             if (newNormals) {
                 newNormals = new Float32Array(newNormals.buffer, 0, newTotalSize);
             }
-            
+
             // Update capacity tracking
             geometry.userData.bufferCapacity = newCapacity;
         }
-        
+
         // Update geometry attributes with new views
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(newColors, 3));
         if (newNormals) {
             geometry.setAttribute('normal', new THREE.Float32BufferAttribute(newNormals, 3));
         }
-        
+
         geometry.userData.bufferCount = newTotalCount;
         geometry.computeBoundingBox();
     }
@@ -450,7 +450,7 @@ export class LoaderManager {
         if (!loadState) return;
 
         const elapsedTime = ((performance.now() - loadState.startTime) / 1000).toFixed(2);
-        
+
         // Create final geometry from all chunks
         const finalGeometry = this.createGeometryFromChunks(loadState.chunks);
 
@@ -484,11 +484,11 @@ export class LoaderManager {
         }
 
         const totalSize = totalPoints * 3;
-        
+
         // Pre-allocate with extra capacity for potential growth (1.5x)
         // This reduces reallocations during incremental updates
         const allocSize = Math.ceil(totalSize * 1.5);
-        
+
         // Try to reuse buffers from pool, or allocate new ones
         let positions = this.getPooledBuffer('positions', allocSize);
         let colors = this.getPooledBuffer('colors', allocSize);
@@ -498,13 +498,13 @@ export class LoaderManager {
         let offset = 0;
         for (const chunk of chunks) {
             const chunkSize = chunk.positions.length;
-            
+
             positions.set(chunk.positions, offset);
             colors.set(chunk.colors, offset);
             if (normals && chunk.normals) {
                 normals.set(chunk.normals, offset);
             }
-            
+
             offset += chunkSize;
         }
 
@@ -517,7 +517,7 @@ export class LoaderManager {
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(posView, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorView, 3));
-        
+
         if (normalView) {
             geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normalView, 3));
         } else {
@@ -525,11 +525,11 @@ export class LoaderManager {
         }
 
         geometry.computeBoundingBox();
-        
+
         // Track capacity for efficient growth
         geometry.userData.bufferCapacity = allocSize;
         geometry.userData.bufferCount = totalPoints;
-        
+
         // Free buffers back to pool when geometry is disposed
         geometry.userData.bufferPooled = true;
         const originalDispose = geometry.dispose.bind(geometry);
@@ -545,13 +545,13 @@ export class LoaderManager {
 
         return geometry;
     }
-    
+
     /**
      * Get a buffer from pool or allocate new one
      */
     getPooledBuffer(type, size) {
         const pool = this.bufferPool[type];
-        
+
         // Find a buffer that's large enough
         for (let i = 0; i < pool.length; i++) {
             const buffer = pool[i];
@@ -561,22 +561,22 @@ export class LoaderManager {
                 return buffer.length === size ? buffer : new Float32Array(buffer.buffer, 0, size);
             }
         }
-        
+
         // No suitable buffer found, allocate new one
         return new Float32Array(size);
     }
-    
+
     /**
      * Return a buffer to pool for reuse
      */
     returnBufferToPool(type, buffer) {
         const pool = this.bufferPool[type];
-        
+
         // Only pool buffers up to 50MB to avoid memory bloat
         const maxPooledSize = 50 * 1024 * 1024 / 4; // 50MB in floats
         if (buffer.length <= maxPooledSize) {
             pool.push(buffer);
-            
+
             // Keep pool size reasonable (max 5 buffers per type)
             if (pool.length > 5) {
                 pool.shift();
@@ -602,7 +602,7 @@ export class LoaderManager {
 
         // Clear chunks to free memory
         loadState.chunks = [];
-        
+
         this.activeLoads.delete(filename);
         this.pendingUpdates.delete(filename);
     }
@@ -617,7 +617,7 @@ export class LoaderManager {
             }
             loadState.reject(new Error('Load cancelled'));
         }
-        
+
         this.activeLoads.clear();
         this.workers = [];
         this.loadQueue = [];
@@ -633,8 +633,8 @@ export class LoaderManager {
         return {
             received: loadState.receivedPoints,
             total: loadState.totalPoints,
-            percentage: loadState.totalPoints > 0 
-                ? (loadState.receivedPoints / loadState.totalPoints) * 100 
+            percentage: loadState.totalPoints > 0
+                ? (loadState.receivedPoints / loadState.totalPoints) * 100
                 : 0
         };
     }

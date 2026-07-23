@@ -20,13 +20,13 @@ export function createSceneManager(app, ui) {
     app.renderer.outputColorSpace = THREE.SRGBColorSpace;
     app.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     app.renderer.toneMappingExposure = 1.0;
-    app.renderer.shadowMap.enabled = true;                    
-    app.renderer.shadowMap.type = THREE.PCFSoftShadowMap;   
+    app.renderer.shadowMap.enabled = true;
+    app.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     app.renderer.setPixelRatio(window.devicePixelRatio);
     app.renderer.setSize(window.innerWidth, window.innerHeight);
     const canvasContainer = document.getElementById('canvas-container');
     if (canvasContainer) {
-      canvasContainer.appendChild(app.renderer.domElement);
+        canvasContainer.appendChild(app.renderer.domElement);
     }
 
     app.controls = new OrbitControls(app.camera, app.renderer.domElement);
@@ -35,15 +35,15 @@ export function createSceneManager(app, ui) {
 
     // Initialize TransformControls
     app.transformControl = new TransformControls(app.camera, app.renderer.domElement);
-    
+
     app.transformControl.setMode('translate'); // Default to translate mode
     app.transformControl.addEventListener('dragging-changed', function (event) {
         // Disable orbit controls while dragging the gizmo
         app.controls.enabled = !event.value;
-        
+
         // Set transform flag when dragging starts/stops
         app._isTransforming = event.value;
-        
+
         // Invalidate bbox cache when object is transformed
         if (!event.value && app.selectedFile) {
             const fileData = app.loadedFiles.get(app.selectedFile);
@@ -56,8 +56,8 @@ export function createSceneManager(app, ui) {
     });
     app.transformControl.setSize(0.5);
     //Note: we can change this to world for global gizmo
-    app.transformControl.setSpace('local'); 
-    
+    app.transformControl.setSpace('local');
+
     app.scene.add(app.transformControl.getHelper());
     /************************************************************* */
 
@@ -66,7 +66,7 @@ export function createSceneManager(app, ui) {
     app.mouse = new THREE.Vector2();
 
     window.addEventListener('resize', onWindowResize);
-    
+
     // Track mouse down position to detect actual clicks vs drags
     let mouseDownPos = null;
     app.renderer.domElement.addEventListener('mousedown', (e) => {
@@ -93,7 +93,7 @@ export function createSceneManager(app, ui) {
 
     // Create the LoaderManager and wire callbacks
     app.loaderManager = new LoaderManager(handleFileLoaded, handleFileProgress, handleFileError);
-    
+
     // Create InstanceManager for optimizing repeated objects
     app.instanceManager = new InstanceManager(app.scene);
     app.lastTraditionalRenderMode = app.renderMode === 'mesh' ? 'mesh' : 'points';
@@ -126,7 +126,7 @@ export function createSceneManager(app, ui) {
     };
 
     // ----------------- Implementation ------------------
-    
+
     /**
      * Calculate optimal point size for consistent visual density across all screens
      * Simplified formula for better consistency
@@ -135,15 +135,15 @@ export function createSceneManager(app, ui) {
         // Use dynamic base size from app state (default 0.015)
         //Taken from ui.js 
         const baseSize = app.pointBaseSize || 0.015;
-        
+
         // DPI compensation - directly scale with device pixel ratio
         // High DPI screens need proportionally larger points
         const dpiCompensation = window.devicePixelRatio;
-        
+
         // Viewport scaling - normalize based on standard 1080p height
         // This ensures points look similar on different screen sizes
         const viewportScale = window.innerHeight / 1080;
-        
+
         // Final size calculation: base * DPI * viewport scale
         // This provides consistent point density across different displays
         return baseSize * dpiCompensation * viewportScale;
@@ -261,7 +261,7 @@ export function createSceneManager(app, ui) {
         if (!filepath) return false;
         const urlPath = filepath.split('?')[0];
         if (!urlPath.toLowerCase().endsWith('.ply')) return false;
-        
+
         try {
             // Fast check: fetch only the first 4KB to read the header
             const response = await fetch(filepath, {
@@ -299,7 +299,7 @@ export function createSceneManager(app, ui) {
             fileData.loadingProgress = 0;
             updateFileRender(filename);
         });
-        
+
         const hasProperties = await checkHas3DGSProperties(normalizedTargetPath);
         if (!hasProperties) {
             return fallbackToTraditional(new Error(`The file '${target.filename}' does not have the necessary 3DGS properties (f_dc, scale, rot).`), fallbackMode);
@@ -344,7 +344,7 @@ export function createSceneManager(app, ui) {
             viewer.start();
             app.splatViewer = viewer;
             app.renderMode = '3dgs';
-            
+
             // Configure camera controls to allow free rotation without gimbal lock
             setTimeout(() => {
                 try {
@@ -356,29 +356,29 @@ export function createSceneManager(app, ui) {
                         // causes a zero-vector calculation in the up-vector, permanently freezing the camera.
                         viewer.controls.minPolarAngle = 0.01;
                         viewer.controls.maxPolarAngle = Math.PI - 0.01;
-                        
+
                         // Ensure horizontal rotation is completely unbounded
                         viewer.controls.minAzimuthAngle = -Infinity;
                         viewer.controls.maxAzimuthAngle = Infinity;
-                        
+
                         // Enable damping for smooth, natural feeling rotation
                         if (viewer.controls.enableDamping !== undefined) {
                             viewer.controls.enableDamping = true;
                         }
-                        
+
                         console.log('[3DGS] Camera controls configured for free rotation');
                     }
                 } catch (e) {
                     console.warn('[3DGS] Could not configure camera controls:', e);
                 }
             }, 100);
-            
+
             // Store the initial camera state for pan mode
             if (viewer.camera) {
                 app._splatInitialCamPosition = viewer.camera.position.clone ? viewer.camera.position.clone() : viewer.camera.position;
                 app._splatInitialCamTarget = viewer.camera.target || [0, 0, 0];
             }
-            
+
             showInlineMessage(`3DGS rendering enabled for ${target.filename}. Use mouse to rotate, scroll to zoom.`, 'success', 3000);
             return '3dgs';
         } catch (error) {
@@ -453,37 +453,37 @@ export function createSceneManager(app, ui) {
         // Throttle info icon updates - only update every 2 frames (30fps max)
         if (!app._frameCounter) app._frameCounter = 0;
         app._frameCounter++;
-        
+
         // Update both Info Icon AND Highlight Box position if an object is selected
         if (app.selectedFile) {
             const fileData = app.loadedFiles.get(app.selectedFile);
-            
+
             // Sync Highlight Box position with Object position
             if (fileData && fileData.object && app.highlightBoxes) {
                 // Get the main highlight box mesh
                 const boxMesh = app.highlightBoxes.get(app.selectedFile) || app.highlightBoxes.get(app.selectedFile + ':outline');
-                
+
                 if (boxMesh) {
                     // Recompute world center of the object
                     if (!fileData.geometry.boundingBox) fileData.geometry.computeBoundingBox();
-                    
+
                     // We need to apply the object's current World Matrix to the center of its local bounding box
                     // to find where the box should be in World Space.
                     const localCenter = new THREE.Vector3();
                     fileData.geometry.boundingBox.getCenter(localCenter);
-                    
+
                     // Transform local center to world space
                     const worldCenter = localCenter.clone().applyMatrix4(fileData.object.matrixWorld);
-                    
+
                     // Apply rotation and scale if needed, but for an AABB highlight we usually just follow position
                     // Ideally, the highlight box should match the object's transform.
                     // Simple approach: Set box position to object's world center
-                    
+
                     // Note: This assumes the HighlightBox was created axis-aligned in World Space. 
                     // If we rotate the object, the AABB naturally changes, but our BoxGeometry is static.
                     // For a true OBB (Oriented Bounding Box), we should copy position/quaternion.
                     // For now, let's copy position to strictly follow the drag.
-                    
+
                     const currentBox = app.highlightBoxes.get(app.selectedFile);
                     const currentOutline = app.highlightBoxes.get(app.selectedFile + ':outline');
 
@@ -496,7 +496,7 @@ export function createSceneManager(app, ui) {
                 ui.updateInfoIconPosition();
             }
         }
-        
+
         // Update highlight label positions/frame dependent UI
         if (ui && ui.updateFrameDependentUI) ui.updateFrameDependentUI();
     }
@@ -505,16 +505,16 @@ export function createSceneManager(app, ui) {
         // starts loading files and initial UI updates
         // Clear duplicates map for this load session to handle unrelated files with same name
         const usedNames = new Set();
-        
+
         app.plyFiles.forEach((filepath, index) => {
             const normalizedFilepath = normalizeViewerFileUrl(filepath);
             let filename = inferFilenameFromUrl(normalizedFilepath, `model-${index + 1}.ply`);
-            
+
             // Use friendly name if available (passed from Viewer/index.jsx)
             if (app.plyFileNames && app.plyFileNames[index]) {
                 filename = app.plyFileNames[index];
             }
-            
+
             // Ensure unique filenames in the map
             let uniqueName = filename;
             let counter = 1;
@@ -567,7 +567,7 @@ export function createSceneManager(app, ui) {
             fileData.loadingProgress = 0;
         });
         if (ui) ui.createFileCheckboxes();
-        
+
         // Iterate through loadedFiles instead of plyFiles array to ensure we use the correct keys (filenames)
         // that were established in loadAllPLYFiles (checking for friendly names/deduplication)
         app.loadedFiles.forEach((fileData, filename) => {
@@ -720,7 +720,7 @@ export function createSceneManager(app, ui) {
         if (!fileData) return;
         ensureGeometryHasNormals(geometry);
         if (!geometry.attributes.color) geometry.setAttribute('color', new THREE.Float32BufferAttribute(createDefaultColors(geometry.attributes.position.count), 3));
-        
+
         // Handle incremental updates more efficiently
         const isIncrementalUpdate = isPreview && fileData.geometry && fileData.object;
         if (isIncrementalUpdate && (isIdleUpdate || isIncremental)) {
@@ -758,7 +758,7 @@ export function createSceneManager(app, ui) {
                 }
             }
             if (ui) ui.ensureSceneInfoForFile(filename);
-            
+
             // If this is final load (not preview), optimize instances
             if (!isPreview) {
                 // Defer instance optimization slightly to avoid blocking
@@ -799,16 +799,16 @@ export function createSceneManager(app, ui) {
         app.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
         app.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
         app.raycaster.setFromCamera(app.mouse, app.camera);
-        
+
         const objectsToCheck = [];
         app.loadedFiles.forEach((fileData) => {
             if (fileData.object && fileData.visible) objectsToCheck.push(fileData.object);
         });
-        
+
         // Use recursive=true if objects might be groups, but for PLY meshes usually false is fine. 
         // Using false for performance unless structure changes.
         const intersects = app.raycaster.intersectObjects(objectsToCheck, false);
-        
+
         if (intersects.length > 0) {
             const clickedObject = intersects[0].object;
             if (app.selectedFile) {
@@ -822,28 +822,28 @@ export function createSceneManager(app, ui) {
             for (const [filename, fileData] of app.loadedFiles.entries()) {
                 if (fileData.object === clickedObject) {
                     app.selectedFile = filename;
-                    
+
                     if (app.renderMode === 'points') {
                         clickedObject.material.vertexColors = false;
                         clickedObject.material.color.set(0xffffff);
                         clickedObject.material.needsUpdate = true;
                     }
-                    
+
                     // Attach transform controls only in Pan Mode
                     app.transformControl.detach(); // Detach first to ensure clean state
-                    
+
                     if (app.currentMode === 'pan') {
                         // Make sure object has proper matrix
                         clickedObject.updateMatrixWorld(true);
-                        
+
                         app.transformControl.attach(clickedObject);
                         app.transformControl.enabled = true;
                         app.transformControl.visible = true;
-                        
+
                         // Switch to translate mode by default for easier moving
                         app.transformControl.setMode('translate');
                     }
-                    
+
                     if (ui) ui.updateObjectLabelsUI();
                     const fd = app.loadedFiles.get(filename);
                     if (fd && fd.geometry) {
@@ -905,7 +905,7 @@ export function createSceneManager(app, ui) {
         app.highlightBoxes.clear();
     }
 
-    function createHighlightBox({ name, filename, center = [0,0,0], size = [1,1,1] }) {
+    function createHighlightBox({ name, filename, center = [0, 0, 0], size = [1, 1, 1] }) {
         clearHighlights();
         const boxSize = new THREE.Vector3(size[0] || 1, size[1] || 1, size[2] || 1);
         const geometry = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
@@ -944,7 +944,7 @@ export function createSceneManager(app, ui) {
         const startPos = app.camera.position.clone();
         const startTarget = app.controls.target.clone();
         const endTarget = targetCenter.clone();
-        const size = options.size || new THREE.Vector3(1,1,1);
+        const size = options.size || new THREE.Vector3(1, 1, 1);
         const maxSize = Math.max(size.x, size.y, size.z);
         const fov = (app.camera.fov * Math.PI) / 180.0;
         const distance = Math.max(1.0, maxSize * 1.8 / Math.tan(fov / 2));
@@ -1009,37 +1009,37 @@ export function createSceneManager(app, ui) {
         }
         app.cameraAnim = { raf: requestAnimationFrame(tick) };
     }
-    
+
     function set3DGSCameraMode(mode) {
         // Set camera interaction mode for 3DGS viewer
         if (!app.splatViewer) return;
         if (!app.splatViewer.camera) return;
-        
+
         // The GaussianSplats3D library handles interactions natively
         // This function is a placeholder for future mode-specific camera behavior
         // For now, just ensure controls are responsive
     }
-    
+
     function get3DGSCameraState() {
         // Get current camera state from 3DGS viewer
         if (!app.splatViewer && !app.splatViewer.camera) return null;
-        
+
         const cam = app.splatViewer.camera;
         return {
             position: cam.position ? [cam.position.x, cam.position.y, cam.position.z] : null,
             target: app.splatViewer.controls?.target ? [app.splatViewer.controls.target.x, app.splatViewer.controls.target.y, app.splatViewer.controls.target.z] : null
         };
     }
-    
+
     function recenter3DGSCamera() {
         // Force recenter the 3DGS camera to fix stuck rotation
         if (!app.splatViewer || !app.splatViewer.camera) return;
-        
+
         try {
             // Reset camera to default orientation
             app.splatViewer.camera.position = [3, 2.5, 3];
             app.splatViewer.camera.target = [0, 0, 0];
-            
+
             // Force update of camera rotation state
             if (app.splatViewer.cameraController) {
                 // Reset any internal euler angle state
@@ -1051,7 +1051,7 @@ export function createSceneManager(app, ui) {
                     app.splatViewer.cameraController.update();
                 }
             }
-            
+
             // Trigger a render to apply changes
             if (typeof app.splatViewer.renderOnce === 'function') {
                 app.splatViewer.renderOnce();
@@ -1060,13 +1060,13 @@ export function createSceneManager(app, ui) {
             console.warn('[3DGS] Failed to recenter camera:', e);
         }
     }
-    
+
     function optimizeInstances() {
         if (!app.instanceManager) return 0;
         const count = app.instanceManager.optimizeScene(app.loadedFiles);
         return count;
     }
-    
+
     function toggleInstancing(enabled) {
         if (!app.instanceManager) return;
         app.instanceManager.setEnabled(enabled);
@@ -1074,7 +1074,7 @@ export function createSceneManager(app, ui) {
             optimizeInstances();
         }
     }
-    
+
     function getInstanceStats() {
         if (!app.instanceManager) return null;
         return app.instanceManager.getStats();
