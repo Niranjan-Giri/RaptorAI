@@ -15,6 +15,7 @@ export class LoaderManager {
         // Initialize DRACOLoader for .drc file support
         this.dracoLoader = new DRACOLoader();
         this.dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+        console.log('%c[DRACO] DRACOLoader initialized — decoder path: https://www.gstatic.com/draco/versioned/decoders/1.5.7/', 'color: #00e5ff; font-weight: bold;');
         
         this.workers = [];
         this.maxWorkers = navigator.hardwareConcurrency || 4;
@@ -43,6 +44,7 @@ export class LoaderManager {
      * Load a DRC (Draco compressed) file
      */
     loadDRC(filepath, filename) {
+        console.log('%c[DRACO] loadDRC called', 'color: #00e5ff; font-weight: bold;', { filename, filepath });
         return new Promise((resolve, reject) => {
             if (!filepath) {
                 const errMsg = `[DRC] No filepath provided for '${filename}'`;
@@ -50,6 +52,8 @@ export class LoaderManager {
                 if (this.onFileError) this.onFileError(filename, errMsg);
                 return reject(new Error(errMsg));
             }
+
+            console.log(`%c[DRACO] Starting Draco decode for '${filename}'`, 'color: #00e5ff;', `\n  URL: ${filepath}`);
 
             if (this.onFileProgress) {
                 this.onFileProgress(filename, 'Starting DRC load...', 0);
@@ -59,6 +63,14 @@ export class LoaderManager {
                 filepath,
                 (geometry) => {
                     try {
+                        const pointCount = geometry.attributes.position.count;
+                        console.log(
+                            `%c[DRACO] ✅ Geometry decoded for '${filename}'`,
+                            'color: #00e676; font-weight: bold;',
+                            `\n  Points: ${pointCount.toLocaleString()}`,
+                            `\n  Has colors: ${!!geometry.attributes.color}`,
+                            `\n  Has normals: ${!!geometry.attributes.normal}`
+                        );
                         // Ensure color attribute exists — default to white
                         if (!geometry.attributes.color) {
                             const count = geometry.attributes.position.count;
@@ -101,7 +113,7 @@ export class LoaderManager {
                 },
                 (error) => {
                     const errMsg = error?.message || String(error) || 'Unknown DRC load error';
-                    console.error(`[DRC] Failed to load '${filename}' from ${filepath}:`, errMsg);
+                    console.error(`%c[DRACO] ❌ Failed to load '${filename}'`, 'color: #ff1744; font-weight: bold;', `\n  URL: ${filepath}`, `\n  Error: ${errMsg}`);
                     if (this.onFileError) this.onFileError(filename, errMsg);
                     reject(new Error(errMsg));
                 }

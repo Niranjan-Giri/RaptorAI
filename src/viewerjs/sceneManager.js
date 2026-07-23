@@ -257,6 +257,34 @@ export function createSceneManager(app, ui) {
         return resolvedMode;
     }
 
+    async function checkHas3DGSProperties(filepath) {
+        if (!filepath) return false;
+        const urlPath = filepath.split('?')[0];
+        if (!urlPath.toLowerCase().endsWith('.ply')) return false;
+        
+        try {
+            // Fast check: fetch only the first 4KB to read the header
+            const response = await fetch(filepath, {
+                headers: { 'Range': 'bytes=0-4096' }
+            });
+            let buffer;
+            if (response.ok || response.status === 206) {
+                buffer = await response.arrayBuffer();
+            } else {
+                // Fallback to full fetch if Range is not supported
+                const fullResponse = await fetch(filepath);
+                buffer = await fullResponse.arrayBuffer();
+            }
+            const textDecoder = new TextDecoder();
+            const text = textDecoder.decode(new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 4096)));
+            // Looking for common Gaussian splat properties
+            return text.includes('f_dc_0') || text.includes('scale_0') || text.includes('rot_0');
+        } catch (error) {
+            console.warn('[3DGS] Error checking properties, assuming false:', error);
+            return false;
+        }
+    }
+
     async function activate3DGS(fallbackMode, requestId) {
         const target = getPreferred3DGSFile();
         if (!target) {
@@ -264,6 +292,18 @@ export function createSceneManager(app, ui) {
         }
 
         const normalizedTargetPath = normalizeViewerFileUrl(target.filepath);
+
+        // Pre-check for 3DGS properties to avoid loading non-3DGS files in the splat viewer
+        app.loadedFiles.forEach((fileData, filename) => {
+            fileData.loadingMessage = `Checking 3DGS compatibility for ${target.filename}...`;
+            fileData.loadingProgress = 0;
+            updateFileRender(filename);
+        });
+        
+        const hasProperties = await checkHas3DGSProperties(normalizedTargetPath);
+        if (!hasProperties) {
+            return fallbackToTraditional(new Error(`The file '${target.filename}' does not have the necessary 3DGS properties (f_dc, scale, rot).`), fallbackMode);
+        }
 
         try {
             deactivate3DGS();
