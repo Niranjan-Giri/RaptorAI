@@ -1,3 +1,4 @@
+import api, { apiBaseUrl } from "../api";
 import { USER_INFO } from "../constants";
 
 /**
@@ -7,10 +8,7 @@ import { USER_INFO } from "../constants";
 export const handleLogout = () => {
   try {
     // Optional: Call backend logout endpoint to clear server-side session
-    fetch(`${import.meta.env.VITE_API_BASE_URL}/api/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    }).catch(error => console.error("Logout error:", error));
+    api.post("/auth/logout").catch(error => console.error("Logout error:", error));
   } catch (error) {
     console.error("Logout error:", error);
   } finally {

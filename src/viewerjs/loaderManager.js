@@ -65,7 +65,7 @@ export class LoaderManager {
                     try {
                         const pointCount = geometry.attributes.position.count;
                         console.log(
-                            `%c[DRACO] ✅ Geometry decoded for '${filename}'`,
+                            `%c[DRACO] Geometry decoded for '${filename}'`,
                             'color: #00e676; font-weight: bold;',
                             `\n  Points: ${pointCount.toLocaleString()}`,
                             `\n  Has colors: ${!!geometry.attributes.color}`,
@@ -113,7 +113,7 @@ export class LoaderManager {
                 },
                 (error) => {
                     const errMsg = error?.message || String(error) || 'Unknown DRC load error';
-                    console.error(`%c[DRACO] ❌ Failed to load '${filename}'`, 'color: #ff1744; font-weight: bold;', `\n  URL: ${filepath}`, `\n  Error: ${errMsg}`);
+                    console.error(`%c[DRACO]  Failed to load '${filename}'`, 'color: #ff1744; font-weight: bold;', `\n  URL: ${filepath}`, `\n  Error: ${errMsg}`);
                     if (this.onFileError) this.onFileError(filename, errMsg);
                     reject(new Error(errMsg));
                 }

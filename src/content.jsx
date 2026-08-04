@@ -16,7 +16,7 @@ export const userNavigation = [
     onClick: async () => {
       try {
         // Call backend logout endpoint to clear server-side session
-        await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/auth/logout`, {
+        await fetch('/api/auth/logout', {
           method: 'POST',
           credentials: 'include'
         });

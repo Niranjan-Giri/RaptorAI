@@ -399,14 +399,61 @@ export function Username() {
         <section className="mb-2 mx-auto max-w-7xl">
           <h2 className="text-2xl font-bold text-white mb-6">Your Projects</h2>
           {loadingProjects ? (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
-              <p className="text-gray-400">Loading your projects...</p>
+            <div className="space-y-4">
+              {/* Animated loading bar */}
+              <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 rounded-full"
+                  style={{
+                    width: "60%",
+                    animation: "projectsLoadingBar 1.4s ease-in-out infinite",
+                  }}
+                />
+              </div>
+              {/* Shimmer skeleton cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="bg-gray-800 rounded-lg border border-gray-700 p-6 overflow-hidden relative"
+                    style={{ opacity: 1 - (i - 1) * 0.25 }}
+                  >
+                    <div
+                      className="h-48 rounded-lg mb-4 bg-gray-700"
+                      style={{ animation: "shimmer 1.6s ease-in-out infinite" }}
+                    />
+                    <div
+                      className="h-4 rounded bg-gray-700 mb-2 w-3/4"
+                      style={{ animation: "shimmer 1.6s ease-in-out infinite 0.1s" }}
+                    />
+                    <div
+                      className="h-3 rounded bg-gray-700 w-1/2"
+                      style={{ animation: "shimmer 1.6s ease-in-out infinite 0.2s" }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <style>{`
+                @keyframes projectsLoadingBar {
+                  0% { transform: translateX(-100%); }
+                  50% { transform: translateX(100%); }
+                  100% { transform: translateX(100%); }
+                }
+                @keyframes shimmer {
+                  0%, 100% { opacity: 0.4; }
+                  50% { opacity: 0.8; }
+                }
+              `}</style>
             </div>
           ) : projects.length === 0 ? (
-            <div className="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
-              <p className="text-gray-400">
-                Projects will appear here once you upload a pointcloud
-              </p>
+            <div className="bg-gray-800 rounded-lg border border-gray-700 p-12 text-center">
+              <div className="mb-4 opacity-40">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-12 h-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+              </div>
+              <p className="text-gray-300 font-medium text-lg">Your uploaded projects will appear here</p>
+              <p className="text-gray-500 text-sm mt-2">Use the RaptorTwin app to scan and upload your environment</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -437,13 +484,20 @@ export function Username() {
                           },
                         )}
                       </p>
-                      <p className="text-gray-400 text-xs mt-2">
-                        {project.allUrls.reduce(
-                          (total, cat) => total + cat.urls.length,
-                          0,
-                        )}{" "}
-                        Models
-                      </p>
+                      {project.categories && project.categories.length > 0 && (
+                        <p className="text-gray-400 text-xs mt-2">
+                          {project.categories.length} Categories
+                        </p>
+                      )}
+                      <span
+                        className={`mt-3 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                          project.processed
+                            ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                            : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                        }`}
+                      >
+                        {project.processed ? "Processed" : "Processing…"}
+                      </span>
                     </div>
                   </div>
 
@@ -451,8 +505,8 @@ export function Username() {
                   <h4 className="text-lg font-semibold text-white">
                     {project.name}
                   </h4>
-                  <p className="text-gray-400 text-sm mt-2">
-                    {project.description}
+                  <p className="text-gray-400 text-sm mt-1">
+                    {project.fileName || "Pointcloud project"}
                   </p>
                 </div>
               ))}
