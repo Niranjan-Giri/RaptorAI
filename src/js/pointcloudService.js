@@ -29,6 +29,22 @@ export const fetchPointcloudItems = async (pointcloudId) => {
 };
 
 /**
+ * Fetch detail for a single pointcloud (including download URLs if available).
+ */
+export const fetchPointcloudDetail = async (pointcloudId) => {
+  try {
+    const response = await api.get(`/api/pointclouds/${pointcloudId}/`);
+    return response.data;
+  } catch (error) {
+    console.error(
+      `[PointcloudService] Failed to fetch detail for pointcloud ${pointcloudId}:`,
+      error.message
+    );
+    return null;
+  }
+};
+
+/**
  * Fetch all processed pointclouds (lightweight — no GCS calls).
  * GET /api/pointclouds/ uses the lightweight PointcloudResponse constructor,
  * so downloadUrl / slamOutputDownloadUrl / processedDownloadUrls are all null.

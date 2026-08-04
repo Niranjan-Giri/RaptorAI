@@ -507,7 +507,15 @@ export function createSceneManager(app, ui) {
         const usedNames = new Set();
 
         app.plyFiles.forEach((filepath, index) => {
+            if (!filepath || typeof filepath !== 'string') {
+                console.warn(`[sceneManager] Skipping invalid filepath at index ${index}:`, filepath);
+                return;
+            }
             const normalizedFilepath = normalizeViewerFileUrl(filepath);
+            if (!normalizedFilepath || typeof normalizedFilepath !== 'string') {
+                console.warn(`[sceneManager] Skipping unnormalizable filepath at index ${index}:`, filepath);
+                return;
+            }
             let filename = inferFilenameFromUrl(normalizedFilepath, `model-${index + 1}.ply`);
 
             // Use friendly name if available (passed from Viewer/index.jsx)

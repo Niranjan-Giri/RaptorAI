@@ -4,7 +4,7 @@ import { SettingsIcon, HomeIcon, X } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import NotFound from "../pages/NotFound";
 import { handleLogout } from "../js/logout";
-import { fetchProcessedPointclouds, fetchPointcloudItems } from "../js/pointcloudService";
+import { fetchProcessedPointclouds, fetchPointcloudItems, fetchPointcloudDetail } from "../js/pointcloudService";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -303,18 +303,75 @@ export function Username() {
       const items = await fetchPointcloudItems(project.id);
       console.log("[Profile] Fetched pointcloud items for project:", project.id, items);
 
-      const files = items.map((item) => {
-        // Prefer DRC (deliveryUrl) over PLY
-        const url = item.signedDrcUrl || item.signedPlyUrl;
-        const format = item.signedDrcUrl ? "drc" : "ply";
-        return {
-          id: item.id,
-          name: item.label,
-          url: url,
-          format: format,
-          sizeBytes: item.sizeBytes,
-        };
-      });
+      let files = (Array.isArray(items) ? items : [])
+        .map((item, idx) => {
+          // Robust check for URL field names across camelCase & snake_case
+          const url =
+            item.signedDrcUrl ||
+            item.signed_drc_url ||
+            item.signedPlyUrl ||
+            item.signed_ply_url ||
+            item.signedUrl ||
+            item.signed_url ||
+            item.downloadUrl ||
+            item.download_url ||
+            item.deliveryUrl ||
+            item.delivery_url ||
+            item.url ||
+            item.filepath ||
+            item.file;
+
+          if (!url || typeof url !== "string") return null;
+
+          const isDrc = !!(
+            item.signedDrcUrl ||
+            item.signed_drc_url ||
+            item.deliveryUrl ||
+            item.delivery_url ||
+            url.toLowerCase().includes(".drc")
+          );
+
+          return {
+            id: item.id || idx,
+            name: item.label || item.name || item.filename || item.object_name || `model-${idx + 1}`,
+            url: url,
+            format: isDrc ? "drc" : "ply",
+            sizeBytes: item.sizeBytes || item.size_bytes || item.size,
+          };
+        })
+        .filter(Boolean);
+
+      // Fallback: If no valid item files were returned, try fetching full pointcloud detail
+      if (files.length === 0) {
+        console.log(`[Profile] No item files found for project ${project.id}. Attempting fallback detail fetch...`);
+        const detail = await fetchPointcloudDetail(project.id);
+        if (detail) {
+          if (detail.processedDownloadUrls) {
+            files = Object.entries(detail.processedDownloadUrls).flatMap(([category, urls]) => {
+              const urlList = Array.isArray(urls) ? urls : [urls];
+              return urlList.map((url, index) => ({
+                id: `${category}-${index}`,
+                name: urlList.length > 1 ? `${category}${index + 1}` : category,
+                url: url,
+                format: typeof url === 'string' && url.toLowerCase().includes('.drc') ? 'drc' : 'ply',
+              }));
+            }).filter(f => f.url && typeof f.url === 'string');
+          } else if (detail.downloadUrl || detail.download_url || detail.signedUrl || detail.signed_url) {
+            const url = detail.downloadUrl || detail.download_url || detail.signedUrl || detail.signed_url;
+            files = [{
+              id: detail.id || project.id,
+              name: detail.name || project.name || 'Model',
+              url: url,
+              format: typeof url === 'string' && url.toLowerCase().includes('.drc') ? 'drc' : 'ply',
+            }];
+          }
+        }
+      }
+
+      if (files.length === 0) {
+        alert(`No viewable 3D models available for project "${project.name || 'selected'}".`);
+        return;
+      }
 
       navigate(`/viewer?project=${project.id}`, {
         state: {
@@ -324,6 +381,7 @@ export function Username() {
       });
     } catch (error) {
       console.error("[Profile] Failed to load project items:", error);
+      alert("Failed to load project files. Please try again.");
     } finally {
       setLoadingProjectId(null);
     }

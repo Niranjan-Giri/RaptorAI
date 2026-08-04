@@ -82,11 +82,11 @@ const Viewer = () => {
           if (location.state && location.state.files && location.state.files.length > 0) {
             setIsLoading(true);
             
-            const filesToLoad = location.state.files;
+            const filesToLoad = (location.state.files || []).filter(f => f && f.url && typeof f.url === 'string');
             
             // Set the PLY files and names
-            app.plyFiles = filesToLoad.map(f => normalizeViewerFileUrl(f.url));
-            app.plyFileNames = filesToLoad.map(f => f.name);
+            app.plyFiles = filesToLoad.map(f => normalizeViewerFileUrl(f.url)).filter(Boolean);
+            app.plyFileNames = filesToLoad.map(f => f.name || 'model.ply');
             
             // Clear previously loaded files from the scene
             app.loadedFiles.forEach((fileData) => {
