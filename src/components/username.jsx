@@ -4,7 +4,7 @@ import { SettingsIcon, HomeIcon, X } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import NotFound from "../pages/NotFound";
 import { handleLogout } from "../js/logout";
-import { fetchProcessedPointclouds } from "../js/pointcloudService";
+import { fetchProcessedPointclouds, fetchPointcloudItems } from "../js/pointcloudService";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -294,15 +294,39 @@ export function Username() {
     });
   };
 
-  const handleLoadProjects = (project) => {
-    // Navigate to viewer with example name
-    navigate(`/viewer?project=${project.id}`, {
-      state: {
-        projectName: project.name,
-        processedDownloadUrls: project.processedDownloadUrls,
-        files: project.files, // Pass the pre-processed files array to avoid duplication
-      },
-    });
+  const [loadingProjectId, setLoadingProjectId] = useState(null);
+
+  const handleLoadProjects = async (project) => {
+    if (loadingProjectId) return; // Prevent double-clicks
+    setLoadingProjectId(project.id);
+    try {
+      const items = await fetchPointcloudItems(project.id);
+      console.log("[Profile] Fetched pointcloud items for project:", project.id, items);
+
+      const files = items.map((item) => {
+        // Prefer DRC (deliveryUrl) over PLY
+        const url = item.signedDrcUrl || item.signedPlyUrl;
+        const format = item.signedDrcUrl ? "drc" : "ply";
+        return {
+          id: item.id,
+          name: item.label,
+          url: url,
+          format: format,
+          sizeBytes: item.sizeBytes,
+        };
+      });
+
+      navigate(`/viewer?project=${project.id}`, {
+        state: {
+          projectName: project.name,
+          files: files,
+        },
+      });
+    } catch (error) {
+      console.error("[Profile] Failed to load project items:", error);
+    } finally {
+      setLoadingProjectId(null);
+    }
   };
 
   // Show loading state while validating
@@ -460,9 +484,20 @@ export function Username() {
               {projects.map((project, index) => (
                 <div
                   key={project.id || index}
-                  className="bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all p-6 cursor-pointer border border-gray-700 hover:border-blue-500 hover:scale-105"
+                  className={`bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all p-6 cursor-pointer border border-gray-700 hover:border-blue-500 hover:scale-105 relative ${
+                    loadingProjectId && loadingProjectId !== project.id ? "opacity-50 pointer-events-none" : ""
+                  }`}
                   onClick={() => handleLoadProjects(project)}
                 >
+                  {/* Loading overlay */}
+                  {loadingProjectId === project.id && (
+                    <div className="absolute inset-0 bg-black/60 rounded-lg flex items-center justify-center z-20">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                        <span className="text-blue-300 text-sm font-medium">Loading items…</span>
+                      </div>
+                    </div>
+                  )}
                   {/* Project Placard */}
                   <div className="h-48 bg-gradient-to-br from-slate-700 to-slate-900 rounded-lg mb-4 flex items-center justify-center relative overflow-hidden">
                     {/* Background accent */}

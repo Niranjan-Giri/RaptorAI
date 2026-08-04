@@ -7,7 +7,7 @@ import api from "../api";
  */
 export const fetchPointcloudItems = async (pointcloudId) => {
   try {
-    const response = await api.get(`pointcloud-items/${pointcloudId}/`);
+    const response = await api.get(`/api/pointcloud-items/${pointcloudId}/`);
     const items = Array.isArray(response.data)
       ? response.data
       : response.data?.data || response.data?.items || [];

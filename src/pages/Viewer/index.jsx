@@ -8,7 +8,7 @@ import api from "../../api";
 const Viewer = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { projectName, processedDownloadUrls } = location.state || {};
+  const { projectName } = location.state || {};
   const [searchParams] = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(window.innerWidth > 768);
