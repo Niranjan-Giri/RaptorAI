@@ -497,20 +497,16 @@ export function Username() {
                 {[1, 2, 3].map((i) => (
                   <div
                     key={i}
-                    className="bg-gray-800 rounded-lg border border-gray-700 p-6 overflow-hidden relative"
+                    className="bg-gray-800 rounded-xl border border-gray-700 p-5 overflow-hidden relative"
                     style={{ opacity: 1 - (i - 1) * 0.25 }}
                   >
                     <div
-                      className="h-48 rounded-lg mb-4 bg-gray-700"
+                      className="h-5 rounded bg-gray-700 mb-3 w-3/4"
                       style={{ animation: "shimmer 1.6s ease-in-out infinite" }}
                     />
                     <div
-                      className="h-4 rounded bg-gray-700 mb-2 w-3/4"
-                      style={{ animation: "shimmer 1.6s ease-in-out infinite 0.1s" }}
-                    />
-                    <div
-                      className="h-3 rounded bg-gray-700 w-1/2"
-                      style={{ animation: "shimmer 1.6s ease-in-out infinite 0.2s" }}
+                      className="h-4 rounded bg-gray-700 w-1/2"
+                      style={{ animation: "shimmer 1.6s ease-in-out infinite 0.15s" }}
                     />
                   </div>
                 ))}
@@ -542,65 +538,63 @@ export function Username() {
               {projects.map((project, index) => (
                 <div
                   key={project.id || index}
-                  className={`bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all p-6 cursor-pointer border border-gray-700 hover:border-blue-500 hover:scale-105 relative ${
+                  className={`bg-gray-800/90 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-5 cursor-pointer border border-gray-700/80 hover:border-blue-500/80 hover:scale-[1.02] relative group flex flex-col justify-between ${
                     loadingProjectId && loadingProjectId !== project.id ? "opacity-50 pointer-events-none" : ""
                   }`}
                   onClick={() => handleLoadProjects(project)}
                 >
                   {/* Loading overlay */}
                   {loadingProjectId === project.id && (
-                    <div className="absolute inset-0 bg-black/60 rounded-lg flex items-center justify-center z-20">
+                    <div className="absolute inset-0 bg-gray-900/80 rounded-xl flex items-center justify-center z-20 backdrop-blur-xs">
                       <div className="flex flex-col items-center gap-3">
-                        <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                        <span className="text-blue-300 text-sm font-medium">Loading items…</span>
+                        <div className="w-7 h-7 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                        <span className="text-blue-300 text-xs font-medium">Loading items…</span>
                       </div>
                     </div>
                   )}
-                  {/* Project Placard */}
-                  <div className="h-48 bg-gradient-to-br from-slate-700 to-slate-900 rounded-lg mb-4 flex items-center justify-center relative overflow-hidden">
-                    {/* Background accent */}
-                    <div className="absolute inset-0 opacity-20 bg-blue-500"></div>
 
-                    {/* Placard content */}
-                    <div className="relative z-10 text-center px-6">
-                      <h3 className="text-2xl font-bold text-white mb-3">
-                        {project.name}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      {/* File / Project Name */}
+                      <h3 className="text-lg font-semibold text-white truncate group-hover:text-blue-400 transition-colors">
+                        {project.name || project.fileName || "Untitled Project"}
                       </h3>
-                      <p className="text-gray-300 text-sm">
-                        Created:{" "}
-                        {new Date(project.createdAt).toLocaleDateString(
-                          "en-US",
-                          {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                          },
-                        )}
+
+                      {/* Created At */}
+                      <p className="text-gray-400 text-sm mt-2 flex items-center gap-2">
+                        <svg
+                          className="w-4 h-4 text-gray-500 flex-shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                          />
+                        </svg>
+                        <span>
+                          Created:{" "}
+                          {project.createdAt
+                            ? new Date(project.createdAt).toLocaleDateString("en-US", {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              })
+                            : "Date unavailable"}
+                        </span>
                       </p>
-                      {project.categories && project.categories.length > 0 && (
-                        <p className="text-gray-400 text-xs mt-2">
-                          {project.categories.length} Categories
-                        </p>
-                      )}
-                      <span
-                        className={`mt-3 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                          project.processed
-                            ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                            : "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                        }`}
-                      >
-                        {project.processed ? "Processed" : "Processing…"}
-                      </span>
+                    </div>
+
+                    {/* 3D Model / File Icon */}
+                    <div className="p-2.5 rounded-lg bg-gray-700/50 text-blue-400 border border-gray-600/50 group-hover:bg-blue-500/10 group-hover:border-blue-500/30 transition-all flex-shrink-0">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                      </svg>
                     </div>
                   </div>
-
-                  {/* Project info */}
-                  <h4 className="text-lg font-semibold text-white">
-                    {project.name}
-                  </h4>
-                  <p className="text-gray-400 text-sm mt-1">
-                    {project.fileName || "Pointcloud project"}
-                  </p>
                 </div>
               ))}
             </div>
