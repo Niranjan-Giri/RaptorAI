@@ -74,59 +74,49 @@ const Viewer = () => {
             app.ui.setupMenuControls();
           }
           
-          // Check if a specific example was selected via query parameters
+          // Check if a specific example or project was selected
           const exampleName = searchParams.get('example');
-          const pointcloudId = searchParams.get('pointcloudId');
+          const pointcloudId = searchParams.get('pointcloudId') || searchParams.get('project');
           
           // Check if files were passed from location.state (example or project)
           if (location.state && location.state.files && location.state.files.length > 0) {
-            setIsLoading(true);
-            
             const filesToLoad = (location.state.files || []).filter(f => f && f.url && typeof f.url === 'string');
             
-            // Set the PLY files and names
-            app.plyFiles = filesToLoad.map(f => normalizeViewerFileUrl(f.url)).filter(Boolean);
-            app.plyFileNames = filesToLoad.map(f => f.name || 'model.ply');
-            
-            // Clear previously loaded files from the scene
-            app.loadedFiles.forEach((fileData) => {
-              if (fileData.object && fileData.object.parent) {
-                fileData.object.parent.remove(fileData.object);
-              }
-              if (fileData.geometry) {
-                fileData.geometry.dispose();
-              }
-              if (fileData.object && fileData.object.material) {
-                if (Array.isArray(fileData.object.material)) {
-                  fileData.object.material.forEach(m => m.dispose());
-                } else {
-                  fileData.object.material.dispose();
-                }
-              }
-            });
-            app.loadedFiles.clear();
-            
-            // Cancel any pending loads
-            if (app.loaderManager && typeof app.loaderManager.cancelAll === 'function') {
-              app.loaderManager.cancelAll();
+            // Build unique project key
+            let projectKey = 'default';
+            if (pointcloudId) {
+              projectKey = `project_${pointcloudId}`;
+            } else if (exampleName) {
+              projectKey = `example_${exampleName}`;
+            } else if (location.state.projectName) {
+              projectKey = `project_${location.state.projectName}`;
+            } else if (filesToLoad.length > 0) {
+              projectKey = `project_${filesToLoad.map(f => f.name).join('_')}`;
             }
-            
-            // Load all PLY files
-            if (app.sceneManager && typeof app.sceneManager.loadAllPLYFiles === 'function') {
-              app.sceneManager.loadAllPLYFiles();
-              
-              // Frame the objects after a short delay
-              setTimeout(() => {
-                if (app.sceneManager && typeof app.sceneManager.frameAllObjects === 'function') {
-                  console.log('[Viewer] Framing loaded objects');
-                  app.sceneManager.frameAllObjects(1000);
-                }
+
+            if (app.sceneManager && typeof app.sceneManager.loadProject === 'function') {
+              const res = app.sceneManager.loadProject({
+                projectKey,
+                files: filesToLoad
+              });
+
+              if (res && res.isCached) {
+                console.log('[Viewer] Loaded project instantly from cache!');
                 setIsLoading(false);
-              }, 500);
+              } else {
+                setIsLoading(true);
+                // Frame the objects after initial load
+                setTimeout(() => {
+                  if (app.sceneManager && typeof app.sceneManager.frameAllObjects === 'function') {
+                    app.sceneManager.frameAllObjects(1000);
+                  }
+                  setIsLoading(false);
+                }, 500);
+              }
             }
           } 
           else {
-            // No example selected, hide loading screen
+            // No example or project state selected, hide loading screen
             setIsLoading(false);
           }
         }

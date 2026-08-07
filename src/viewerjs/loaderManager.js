@@ -17,6 +17,7 @@ export class LoaderManager {
         this.dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
         console.log('%c[DRACO] DRACOLoader initialized — decoder path: https://www.gstatic.com/draco/versioned/decoders/1.5.7/', 'color: #00e5ff; font-weight: bold;');
 
+        this.sessionId = 0; // Session token to cancel stale callbacks
         this.workers = [];
         this.maxWorkers = navigator.hardwareConcurrency || 4;
         this.activeLoads = new Map(); // filename -> {geometry chunks, worker}
@@ -45,6 +46,7 @@ export class LoaderManager {
      */
     loadDRC(filepath, filename) {
         console.log('%c[DRACO] loadDRC called', 'color: #00e5ff; font-weight: bold;', { filename, filepath });
+        const loadSession = this.sessionId;
         return new Promise((resolve, reject) => {
             if (!filepath) {
                 const errMsg = `[DRC] No filepath provided for '${filename}'`;
@@ -62,6 +64,11 @@ export class LoaderManager {
             this.dracoLoader.load(
                 filepath,
                 (geometry) => {
+                    if (this.sessionId !== loadSession) {
+                        console.log(`[DRACO] Ignoring stale load callback for '${filename}' (session ${loadSession} vs active ${this.sessionId})`);
+                        if (geometry && typeof geometry.dispose === 'function') geometry.dispose();
+                        return;
+                    }
                     try {
                         const pointCount = geometry.attributes.position.count;
                         console.log(
@@ -611,11 +618,14 @@ export class LoaderManager {
      * Cancel all active loads
      */
     cancelAll() {
+        this.sessionId++;
         for (const [filename, loadState] of this.activeLoads.entries()) {
             if (loadState.worker) {
                 loadState.worker.terminate();
             }
-            loadState.reject(new Error('Load cancelled'));
+            if (typeof loadState.reject === 'function') {
+                loadState.reject(new Error('Load cancelled'));
+            }
         }
 
         this.activeLoads.clear();

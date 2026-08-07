@@ -98,10 +98,16 @@ export function createSceneManager(app, ui) {
     app.instanceManager = new InstanceManager(app.scene);
     app.lastTraditionalRenderMode = app.renderMode === 'mesh' ? 'mesh' : 'points';
 
+    // Project Cache: Map<projectKey, { plyFiles, plyFileNames, loadedFiles, sceneInfo }>
+    const projectCache = new Map();
+
     return {
         init: () => {
             animate();
         },
+        loadProject: loadProject,
+        clearProjectCache: clearProjectCache,
+        getActiveProjectKey: () => app.currentProjectKey,
         loadAllPLYFiles: loadAllPLYFiles,
         updateFileRender: updateFileRender,
         toggleFileVisibility: toggleFileVisibility,
@@ -499,6 +505,140 @@ export function createSceneManager(app, ui) {
 
         // Update highlight label positions/frame dependent UI
         if (ui && ui.updateFrameDependentUI) ui.updateFrameDependentUI();
+    }
+
+    function loadProject({ projectKey, files }) {
+        if (!projectKey || !files || files.length === 0) {
+            console.warn('[sceneManager] loadProject called with invalid arguments:', { projectKey, files });
+            return { isCached: false };
+        }
+
+        console.log(`[sceneManager] loadProject requested: '${projectKey}' (active: '${app.currentProjectKey}')`);
+
+        // 1. If requested project is ALREADY active in scene, do nothing
+        if (app.currentProjectKey === projectKey && app.loadedFiles && app.loadedFiles.size > 0) {
+            console.log(`[sceneManager] Project '${projectKey}' is already active in scene.`);
+            return { isCached: true };
+        }
+
+        // 2. Unload currently active project (if any) and save it to projectCache
+        if (app.currentProjectKey && app.currentProjectKey !== projectKey) {
+            console.log(`[sceneManager] Caching and unloading active project '${app.currentProjectKey}'...`);
+
+            // Detach objects of active project from Three.js scene (keep geometries/materials in RAM)
+            if (app.loadedFiles) {
+                app.loadedFiles.forEach((fileData) => {
+                    if (fileData.object && fileData.object.parent) {
+                        fileData.object.parent.remove(fileData.object);
+                    }
+                });
+            }
+
+            // Clear instanced meshes & highlights
+            if (app.instanceManager) app.instanceManager.clearAllInstances();
+            clearHighlights();
+
+            // Save current project state in cache
+            projectCache.set(app.currentProjectKey, {
+                projectKey: app.currentProjectKey,
+                plyFiles: [...(app.plyFiles || [])],
+                plyFileNames: [...(app.plyFileNames || [])],
+                loadedFiles: new Map(app.loadedFiles),
+                sceneInfo: app.sceneInfo ? { ...app.sceneInfo } : null,
+            });
+
+            // Reset active loadedFiles map
+            app.loadedFiles = new Map();
+        }
+
+        // 3. Cancel any in-flight loads from previous projects and bump session
+        if (app.loaderManager) app.loaderManager.cancelAll();
+        app.loadSessionId = (app.loadSessionId || 0) + 1;
+
+        // 4. CACHE HIT CHECK: If projectKey exists in projectCache
+        if (projectCache.has(projectKey)) {
+            console.log(`%c[ProjectCache] INSTANT LOAD for project '${projectKey}' from cache!`, 'color: #00e676; font-weight: bold; font-size: 14px;');
+            const cached = projectCache.get(projectKey);
+
+            // Clean up active loadedFiles map
+            if (app.loadedFiles) {
+                app.loadedFiles.forEach((fileData) => {
+                    if (fileData.object && fileData.object.parent) {
+                        fileData.object.parent.remove(fileData.object);
+                    }
+                });
+                app.loadedFiles.clear();
+            } else {
+                app.loadedFiles = new Map();
+            }
+
+            app.currentProjectKey = projectKey;
+            app.plyFiles = [...cached.plyFiles];
+            app.plyFileNames = [...cached.plyFileNames];
+            app.sceneInfo = cached.sceneInfo ? { ...cached.sceneInfo } : null;
+            app.selectedFile = null;
+
+            // Restore files into app.loadedFiles and app.scene
+            cached.loadedFiles.forEach((fileData, filename) => {
+                app.loadedFiles.set(filename, fileData);
+                if (fileData.object && fileData.visible) {
+                    if (!fileData.object.parent) {
+                        app.scene.add(fileData.object);
+                    }
+                }
+            });
+
+            if (ui) {
+                ui.createFileCheckboxes();
+                ui.updateObjectLabelsUI();
+            }
+
+            // Frame objects in 3D scene
+            setTimeout(() => {
+                frameAllObjects(1000);
+            }, 50);
+
+            return { isCached: true };
+        }
+
+        // 5. CACHE MISS: Load project files from network
+        console.log(`[sceneManager] Loading project '${projectKey}' from source (Cache Miss)...`);
+
+        // Clean up current active scene & clear loadedFiles
+        if (app.loadedFiles) {
+            app.loadedFiles.forEach((fileData) => {
+                if (fileData.object && fileData.object.parent) {
+                    fileData.object.parent.remove(fileData.object);
+                }
+            });
+            app.loadedFiles.clear();
+        } else {
+            app.loadedFiles = new Map();
+        }
+
+        app.currentProjectKey = projectKey;
+        app.plyFiles = files.map(f => normalizeViewerFileUrl(f.url)).filter(Boolean);
+        app.plyFileNames = files.map(f => f.name || 'model.ply');
+        app.selectedFile = null;
+
+        loadAllPLYFiles();
+
+        return { isCached: false };
+    }
+
+    function clearProjectCache() {
+        projectCache.forEach((cached) => {
+            if (cached.loadedFiles) {
+                cached.loadedFiles.forEach((fileData) => {
+                    if (fileData.geometry) fileData.geometry.dispose();
+                    if (fileData.object && fileData.object.material) {
+                        if (Array.isArray(fileData.object.material)) fileData.object.material.forEach(m => m.dispose());
+                        else fileData.object.material.dispose();
+                    }
+                });
+            }
+        });
+        projectCache.clear();
     }
 
     function loadAllPLYFiles() {

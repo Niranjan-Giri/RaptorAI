@@ -108,51 +108,51 @@ export const EXAMPLE_PLY_FILES = [
     thumbnail: "/images/room104.png",
     bucketUrl: "https://storage.googleapis.com/examples_ply/room104/",
     plyFiles: [
-  "air vent_1",
-  "air vent_2",
-  "air vent_3",
-  "air vent_4",
-  "air vent_5",
-  "box fan_1",
-  "ceiling light_1",
-  "ceiling",
-  "door_1",
-  "door_2",
-  "floor",
-  "laptop_1",
-  "office chair_1",
-  "office chair_10",
-  "office chair_11",
-  "office chair_2",
-  "office chair_3",
-  "office chair_4",
-  "office chair_5",
-  "office chair_6",
-  "office chair_7",
-  "office chair_8",
-  "office chair_9",
-  "table_1",
-  "table_2",
-  "table_3",
-  "table_4",
-  "table_5",
-  "thermostat_1",
-  "thermostat_2",
-  "thermostat_3",
-  "thermostat_4",
-  "trash can_1",
-  "trash can_2",
-  "trash can_3",
-  "tv_1",
-  "unlabeled",
-  "wall_1",
-  "wall_2",
-  "wall_3",
-  "wall_4",
-  "wall_5",
-  "white board_1",
-  "wifi router_1"
-],
+      "air vent_1",
+      "air vent_2",
+      "air vent_3",
+      "air vent_4",
+      "air vent_5",
+      "box fan_1",
+      "ceiling light_1",
+      "ceiling",
+      "door_1",
+      "door_2",
+      "floor",
+      "laptop_1",
+      "office chair_1",
+      "office chair_10",
+      "office chair_11",
+      "office chair_2",
+      "office chair_3",
+      "office chair_4",
+      "office chair_5",
+      "office chair_6",
+      "office chair_7",
+      "office chair_8",
+      "office chair_9",
+      "table_1",
+      "table_2",
+      "table_3",
+      "table_4",
+      "table_5",
+      "thermostat_1",
+      "thermostat_2",
+      "thermostat_3",
+      "thermostat_4",
+      "trash can_1",
+      "trash can_2",
+      "trash can_3",
+      "tv_1",
+      "unlabeled",
+      "wall_1",
+      "wall_2",
+      "wall_3",
+      "wall_4",
+      "wall_5",
+      "white board_1",
+      "wifi router_1"
+    ],
   },
 ];
 
@@ -538,9 +538,8 @@ export function Username() {
               {projects.map((project, index) => (
                 <div
                   key={project.id || index}
-                  className={`bg-gray-800/90 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-5 cursor-pointer border border-gray-700/80 hover:border-blue-500/80 hover:scale-[1.02] relative group flex flex-col justify-between ${
-                    loadingProjectId && loadingProjectId !== project.id ? "opacity-50 pointer-events-none" : ""
-                  }`}
+                  className={`bg-gray-800/90 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-5 cursor-pointer border border-gray-700/80 hover:border-blue-500/80 hover:scale-[1.02] relative group flex flex-col justify-between ${loadingProjectId && loadingProjectId !== project.id ? "opacity-50 pointer-events-none" : ""
+                    }`}
                   onClick={() => handleLoadProjects(project)}
                 >
                   {/* Loading overlay */}
@@ -579,10 +578,10 @@ export function Username() {
                           Created:{" "}
                           {project.createdAt
                             ? new Date(project.createdAt).toLocaleDateString("en-US", {
-                                year: "numeric",
-                                month: "short",
-                                day: "numeric",
-                              })
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                            })
                             : "Date unavailable"}
                         </span>
                       </p>
@@ -660,9 +659,8 @@ export function Username() {
 
       {/* Settings Drawer */}
       <div
-        className={`fixed top-0 right-0 h-full w-80 bg-gray-800 shadow-2xl transform transition-transform duration-300 ease-in-out z-50 ${
-          showSettings ? "translate-x-0" : "translate-x-full"
-        }`}
+        className={`fixed top-0 right-0 h-full w-80 bg-gray-800 shadow-2xl transform transition-transform duration-300 ease-in-out z-50 ${showSettings ? "translate-x-0" : "translate-x-full"
+          }`}
       >
         {/* Drawer Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
