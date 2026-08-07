@@ -1,10 +1,10 @@
 import { USER_INFO } from "../constants";
 import { useState, useEffect, useRef } from "react";
-import { SettingsIcon, HomeIcon, X } from "lucide-react";
+import { SettingsIcon, HomeIcon, X, Pencil, Trash2, Check } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import NotFound from "../pages/NotFound";
 import { handleLogout } from "../js/logout";
-import { fetchProcessedPointclouds, fetchPointcloudItems, fetchPointcloudDetail } from "../js/pointcloudService";
+import { fetchProcessedPointclouds, fetchPointcloudItems, renamePointcloud, deletePointcloud } from "../js/pointcloudService";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -206,16 +206,73 @@ export function Username() {
     }
   }, [username]);
 
+  const [editingProjectId, setEditingProjectId] = useState(null);
+  const [editingName, setEditingName] = useState("");
+  const [savingProjectId, setSavingProjectId] = useState(null);
+  const [deletingProject, setDeletingProject] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const loadProjects = async () => {
     setLoadingProjects(true);
     try {
-      const projects = await fetchProcessedPointclouds();
+      const projects = await fetchProcessedPointclouds(username);
       console.log("[Profile] Fetched projects:", projects);
       setProjects(projects);
     } catch (error) {
       setProjects([]);
     } finally {
       setLoadingProjects(false);
+    }
+  };
+
+  const handleStartRename = (project, e) => {
+    if (e) e.stopPropagation();
+    setEditingProjectId(project.id);
+    setEditingName(project.name || project.fileName || "Untitled Project");
+  };
+
+  const handleSaveRename = async (project, e) => {
+    if (e) e.stopPropagation();
+    const trimmed = editingName.trim();
+    if (!trimmed) return;
+    setSavingProjectId(project.id);
+    try {
+      await renamePointcloud(project.id, trimmed, username);
+      setProjects((prev) =>
+        prev.map((p) => (p.id === project.id ? { ...p, name: trimmed } : p))
+      );
+      setEditingProjectId(null);
+    } catch (error) {
+      console.error("[Profile] Failed to rename project:", error);
+    } finally {
+      setSavingProjectId(null);
+    }
+  };
+
+  const handleCancelRename = (e) => {
+    if (e) e.stopPropagation();
+    setEditingProjectId(null);
+  };
+
+  const handleDeleteClick = (project, e) => {
+    if (e) e.stopPropagation();
+    setDeletingProject(project);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingProject) return;
+    setIsDeleting(true);
+    try {
+      await deletePointcloud(deletingProject.id, username);
+      setProjects((prev) => prev.filter((p) => p.id !== deletingProject.id));
+      if (window.__app?.sceneManager?.clearProjectCache) {
+        window.__app.sceneManager.clearProjectCache();
+      }
+    } catch (error) {
+      console.error("[Profile] Failed to delete project:", error);
+    } finally {
+      setIsDeleting(false);
+      setDeletingProject(null);
     }
   };
 
@@ -538,8 +595,9 @@ export function Username() {
               {projects.map((project, index) => (
                 <div
                   key={project.id || index}
-                  className={`bg-gray-800/90 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-5 cursor-pointer border border-gray-700/80 hover:border-blue-500/80 hover:scale-[1.02] relative group flex flex-col justify-between ${loadingProjectId && loadingProjectId !== project.id ? "opacity-50 pointer-events-none" : ""
-                    }`}
+                  className={`bg-gray-800/90 rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-5 cursor-pointer border border-gray-700/80 hover:border-blue-500/80 hover:scale-[1.02] relative group flex flex-col justify-between ${
+                    loadingProjectId && loadingProjectId !== project.id ? "opacity-50 pointer-events-none" : ""
+                  }`}
                   onClick={() => handleLoadProjects(project)}
                 >
                   {/* Loading overlay */}
@@ -552,12 +610,43 @@ export function Username() {
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      {/* File / Project Name */}
-                      <h3 className="text-lg font-semibold text-white truncate group-hover:text-blue-400 transition-colors">
-                        {project.name || project.fileName || "Untitled Project"}
-                      </h3>
+                      {editingProjectId === project.id ? (
+                        <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSaveRename(project, e);
+                              if (e.key === "Escape") handleCancelRename(e);
+                            }}
+                            autoFocus
+                            className="bg-gray-900 border border-blue-500 text-white text-sm rounded px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                            placeholder="Enter project name..."
+                          />
+                          <button
+                            onClick={(e) => handleSaveRename(project, e)}
+                            disabled={savingProjectId === project.id}
+                            className="p-1.5 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                            title="Save Name"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={handleCancelRename}
+                            className="p-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                            title="Cancel"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <h3 className="text-lg font-semibold text-white truncate group-hover:text-blue-400 transition-colors">
+                          {project.name || project.fileName || "Untitled Project"}
+                        </h3>
+                      )}
 
                       {/* Created At */}
                       <p className="text-gray-400 text-sm mt-2 flex items-center gap-2">
@@ -578,20 +667,35 @@ export function Username() {
                           Created:{" "}
                           {project.createdAt
                             ? new Date(project.createdAt).toLocaleDateString("en-US", {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                            })
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                              })
                             : "Date unavailable"}
                         </span>
                       </p>
                     </div>
 
-                    {/* 3D Model / File Icon */}
-                    <div className="p-2.5 rounded-lg bg-gray-700/50 text-blue-400 border border-gray-600/50 group-hover:bg-blue-500/10 group-hover:border-blue-500/30 transition-all flex-shrink-0">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                      </svg>
+                    {/* Action buttons (Rename & Delete) */}
+                    <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {editingProjectId !== project.id && (
+                        <>
+                          <button
+                            onClick={(e) => handleStartRename(project, e)}
+                            className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                            title="Rename Project"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteClick(project, e)}
+                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                            title="Delete Project"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -599,6 +703,56 @@ export function Username() {
             </div>
           )}
         </section>
+
+        {/* Delete Confirmation Modal */}
+        {deletingProject && (
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            onClick={() => setDeletingProject(null)}
+          >
+            <div
+              className="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 text-red-400">
+                <div className="p-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <h3 className="text-xl font-bold text-white">Delete Project</h3>
+              </div>
+              <p className="text-gray-300 text-sm">
+                Are you sure you want to delete{" "}
+                <span className="font-semibold text-white">
+                  "{deletingProject.name || deletingProject.fileName || "this project"}"
+                </span>
+                ? This action cannot be undone.
+              </p>
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setDeletingProject(null)}
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg font-medium text-sm transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2 cursor-pointer"
+                >
+                  {isDeleting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Deleting…</span>
+                    </>
+                  ) : (
+                    <span>Delete</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       <footer className="bg-white rounded-lg shadow-sm dark:bg-gray-900 m-20">
         <div className="w-full max-w-screen-xl mx-auto p-2 md:py-8">

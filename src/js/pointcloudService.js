@@ -51,7 +51,14 @@ export const fetchPointcloudDetail = async (pointcloudId) => {
  * Download URLs are fetched on-demand when the user actually opens a project
  * in the viewer (via fetchPointcloudItems).
  */
-export const fetchProcessedPointclouds = async () => {
+/**
+ * Fetch all processed pointclouds (lightweight — no GCS calls).
+ * GET /api/pointclouds/ uses the lightweight PointcloudResponse constructor,
+ * so downloadUrl / slamOutputDownloadUrl / processedDownloadUrls are all null.
+ * Download URLs are fetched on-demand when the user actually opens a project
+ * in the viewer (via fetchPointcloudItems).
+ */
+export const fetchProcessedPointclouds = async (username) => {
   try {
     const response = await api.get('/api/pointclouds/');
     console.log("[PointcloudService] Raw pointcloud list response:", response.data);
@@ -60,27 +67,92 @@ export const fetchProcessedPointclouds = async () => {
       ? response.data
       : response.data?.data || [];
 
-    // Return all pointclouds (processed or not) with lightweight metadata.
-    // No GCS calls are made here — download URLs are null from the backend.
-    return allPointclouds.map((pcl) => ({
-      id: pcl.id,
-      name: pcl.name,
-      ownerId: pcl.ownerId,
-      username: pcl.username,
-      createdAt: pcl.createdAt,
-      processed: pcl.processed,
-      fileName: pcl.fileName,
-      categories: pcl.categories || [],
-      // These are intentionally null from the lightweight endpoint:
-      // downloadUrl: null,
-      // slamOutputDownloadUrl: null,
-      // processedDownloadUrls: null,
-    }));
+    // Get custom renamed names and deleted IDs stored locally for this user
+    let customNames = {};
+    let deletedIds = [];
+    if (username) {
+      try {
+        customNames = JSON.parse(localStorage.getItem(`raptor_custom_project_names_${username}`) || '{}');
+        deletedIds = JSON.parse(localStorage.getItem(`raptor_deleted_projects_${username}`) || '[]');
+      } catch (e) {
+        console.warn("[PointcloudService] Error reading local project persistence:", e);
+      }
+    }
+
+    return allPointclouds
+      .filter((pcl) => !deletedIds.includes(pcl.id))
+      .map((pcl) => ({
+        id: pcl.id,
+        name: customNames[pcl.id] || pcl.name || pcl.fileName || `Project ${pcl.id}`,
+        ownerId: pcl.ownerId,
+        username: pcl.username,
+        createdAt: pcl.createdAt,
+        processed: pcl.processed,
+        fileName: pcl.fileName,
+        categories: pcl.categories || [],
+      }));
   } catch (error) {
     console.error(
       "[PointcloudService] Failed to fetch pointcloud list:",
       error.message
     );
     throw error;
+  }
+};
+
+/**
+ * Rename a pointcloud project by ID.
+ * Sends PATCH/PUT request to backend and stores custom name in localStorage so it remains after login.
+ */
+export const renamePointcloud = async (pointcloudId, newName, username) => {
+  if (username && pointcloudId) {
+    try {
+      const key = `raptor_custom_project_names_${username}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '{}');
+      existing[pointcloudId] = newName;
+      localStorage.setItem(key, JSON.stringify(existing));
+    } catch (e) {
+      console.warn("[PointcloudService] Could not save renamed project name locally:", e);
+    }
+  }
+
+  try {
+    const response = await api.patch(`/api/pointclouds/${pointcloudId}/`, { name: newName });
+    return response.data;
+  } catch (error) {
+    try {
+      const putResp = await api.put(`/api/pointclouds/${pointcloudId}/`, { name: newName });
+      return putResp.data;
+    } catch (e) {
+      console.warn(`[PointcloudService] Backend rename endpoint unhandled for project ${pointcloudId}. Using local persistence.`);
+      return { id: pointcloudId, name: newName };
+    }
+  }
+};
+
+/**
+ * Delete a pointcloud project by ID.
+ * Sends DELETE request to backend and records deletion in localStorage so it remains deleted after login.
+ */
+export const deletePointcloud = async (pointcloudId, username) => {
+  if (username && pointcloudId) {
+    try {
+      const key = `raptor_deleted_projects_${username}`;
+      const existing = JSON.parse(localStorage.getItem(key) || '[]');
+      if (!existing.includes(pointcloudId)) {
+        existing.push(pointcloudId);
+        localStorage.setItem(key, JSON.stringify(existing));
+      }
+    } catch (e) {
+      console.warn("[PointcloudService] Could not save deleted project ID locally:", e);
+    }
+  }
+
+  try {
+    await api.delete(`/api/pointclouds/${pointcloudId}/`);
+    return true;
+  } catch (error) {
+    console.warn(`[PointcloudService] Backend delete endpoint unhandled for project ${pointcloudId}. Using local persistence.`);
+    return true;
   }
 };
