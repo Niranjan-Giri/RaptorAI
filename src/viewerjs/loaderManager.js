@@ -12,10 +12,14 @@ export class LoaderManager {
         this.onFileProgress = onFileProgress;
         this.onFileError = onFileError;
 
-        // Initialize DRACOLoader for .drc file support
+        // Initialize DRACOLoader with WASM decoder, optimal hardware concurrency worker limit, and preloading
         this.dracoLoader = new DRACOLoader();
         this.dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
-        console.log('%c[DRACO] DRACOLoader initialized — decoder path: https://www.gstatic.com/draco/versioned/decoders/1.5.7/', 'color: #00e5ff; font-weight: bold;');
+        this.dracoLoader.setDecoderConfig({ type: 'wasm' });
+        const maxDracoWorkers = Math.min(navigator.hardwareConcurrency || 4, 8);
+        this.dracoLoader.setWorkerLimit(maxDracoWorkers);
+        this.dracoLoader.preload();
+        console.log(`%c[DRACO] DRACOLoader initialized — WASM mode, ${maxDracoWorkers} parallel workers preloaded`, 'color: #00e5ff; font-weight: bold;');
 
         this.sessionId = 0; // Session token to cancel stale callbacks
         this.workers = [];
@@ -85,8 +89,8 @@ export class LoaderManager {
                             geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
                         }
 
-                        // Ensure normals exist
-                        if (!geometry.attributes.normal) {
+                        // Only compute normals if geometry has mesh face indices (point clouds do not use normals)
+                        if (geometry.index && !geometry.attributes.normal) {
                             geometry.computeVertexNormals();
                         }
 
