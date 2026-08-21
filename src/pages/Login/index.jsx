@@ -46,7 +46,7 @@ export default function Login() {
     setError('');
 
     try {
-      const response = await api.post('auth/signin/', {
+      const response = await api.post('api/auth/signin/', {
         username: formData.username,
         password: formData.password,
       });
