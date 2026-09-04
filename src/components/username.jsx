@@ -1,6 +1,6 @@
 import { USER_INFO } from "../constants";
 import { useState, useEffect, useRef } from "react";
-import { SettingsIcon, HomeIcon, X, Pencil, Trash2, Check } from "lucide-react";
+import { SettingsIcon, HomeIcon, X, Pencil, Trash2, Check, Eye } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import NotFound from "../pages/NotFound";
 import { handleLogout } from "../js/logout";
@@ -211,6 +211,8 @@ export function Username() {
   const [savingProjectId, setSavingProjectId] = useState(null);
   const [deletingProject, setDeletingProject] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [viewingProjectFiles, setViewingProjectFiles] = useState(null);
+  const [loadingProjectFiles, setLoadingProjectFiles] = useState(false);
 
   const loadProjects = async () => {
     setLoadingProjects(true);
@@ -257,6 +259,33 @@ export function Username() {
   const handleDeleteClick = (project, e) => {
     if (e) e.stopPropagation();
     setDeletingProject(project);
+  };
+
+  const handleViewProjectFiles = async (project, e) => {
+    if (e) e.stopPropagation();
+    setViewingProjectFiles({ project, files: [] });
+    setLoadingProjectFiles(true);
+
+    try {
+      const items = await fetchPointcloudItems(project.id);
+      const files = (Array.isArray(items) ? items : [])
+        .map((item, index) => (item.label || item.name || item.filename || item.object_name || `model-${index + 1}`).replace(/\.ply$/i, ""))
+        .filter(Boolean);
+      setViewingProjectFiles({ project, files });
+    } catch (error) {
+      console.error("[Profile] Failed to load project file names:", error);
+      setViewingProjectFiles({ project, files: [] });
+    } finally {
+      setLoadingProjectFiles(false);
+    }
+  };
+
+  const handleViewExampleFiles = (example, e) => {
+    if (e) e.stopPropagation();
+    setViewingProjectFiles({
+      project: example,
+      files: example.plyFiles.map((fileName) => fileName.replace(/\.ply$/i, "")),
+    });
   };
 
   const handleConfirmDelete = async () => {
@@ -514,6 +543,14 @@ export function Username() {
                   }}
                 >
                   <div className="absolute inset-0 bg-black/40"></div>
+                  <button
+                    onClick={(e) => handleViewExampleFiles(example, e)}
+                    className="absolute top-3 right-3 z-20 p-2 text-white bg-gray-900/70 hover:bg-cyan-500/80 rounded-lg transition-colors"
+                    title="View PLY files"
+                    aria-label={`View PLY files in ${example.name}`}
+                  >
+                    <Eye className="w-4 h-4" />
+                  </button>
                   <div className="relative z-10 text-center px-4">
                     <span className="text-white font-semibold text-xl mb-2 block">
                       {example.name}
@@ -681,6 +718,14 @@ export function Username() {
                       {editingProjectId !== project.id && (
                         <>
                           <button
+                            onClick={(e) => handleViewProjectFiles(project, e)}
+                            className="p-1.5 text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 rounded-lg transition-colors"
+                            title="View PLY files"
+                            aria-label={`View PLY files in ${project.name || project.fileName || "project"}`}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={(e) => handleStartRename(project, e)}
                             className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
                             title="Rename Project"
@@ -703,6 +748,58 @@ export function Username() {
             </div>
           )}
         </section>
+
+        {/* PLY file list modal */}
+        {viewingProjectFiles && (
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            onClick={() => setViewingProjectFiles(null)}
+          >
+            <div
+              className="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-lg w-full max-h-[80vh] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-white">PLY files</h3>
+                  <p className="text-gray-400 text-sm mt-1 truncate">
+                    {viewingProjectFiles.project.name || viewingProjectFiles.project.fileName || "Project"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setViewingProjectFiles(null)}
+                  className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Close file list"
+                  aria-label="Close file list"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {loadingProjectFiles ? (
+                <div className="py-10 flex justify-center">
+                  <div className="w-7 h-7 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : viewingProjectFiles.files.length > 0 ? (
+                <div className="max-h-[55vh] overflow-y-auto space-y-2 pr-1">
+                  {viewingProjectFiles.files.map((fileName, index) => (
+                    <div
+                      key={`${fileName}-${index}`}
+                      className="flex items-center gap-3 bg-gray-900/70 border border-gray-700 rounded-lg px-3 py-2"
+                    >
+                      <span className="text-cyan-400 text-xs font-semibold w-6 text-right">{index + 1}</span>
+                      <span className="text-gray-200 text-sm break-all">{fileName}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-400 text-sm py-8 text-center">
+                  No PLY file names are available for this project.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Delete Confirmation Modal */}
         {deletingProject && (
