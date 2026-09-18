@@ -761,7 +761,14 @@ export function Username() {
             >
               <div className="flex items-center justify-between gap-4 mb-4">
                 <div>
-                  <h3 className="text-xl font-bold text-white">PLY files</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-white">Objects</h3>
+                    {viewingProjectFiles.files.length > 0 && (
+                      <span className="text-xs font-medium text-gray-400 bg-gray-700/60 rounded-full px-2 py-0.5">
+                        {viewingProjectFiles.files.length} total
+                      </span>
+                    )}
+                  </div>
                   <p className="text-gray-400 text-sm mt-1 truncate">
                     {viewingProjectFiles.project.name || viewingProjectFiles.project.fileName || "Project"}
                   </p>
@@ -782,15 +789,30 @@ export function Username() {
                 </div>
               ) : viewingProjectFiles.files.length > 0 ? (
                 <div className="max-h-[55vh] overflow-y-auto space-y-2 pr-1">
-                  {viewingProjectFiles.files.map((fileName, index) => (
-                    <div
-                      key={`${fileName}-${index}`}
-                      className="flex items-center gap-3 bg-gray-900/70 border border-gray-700 rounded-lg px-3 py-2"
-                    >
-                      <span className="text-cyan-400 text-xs font-semibold w-6 text-right">{index + 1}</span>
-                      <span className="text-gray-200 text-sm break-all">{fileName}</span>
-                    </div>
-                  ))}
+                  {(() => {
+                    const groups = {};
+                    viewingProjectFiles.files.forEach((name) => {
+                      const match = name.match(/^(.+?)_(\d+)$/);
+                      if (match) {
+                        const baseName = match[1];
+                        const num = parseInt(match[2], 10);
+                        groups[baseName] = Math.max(groups[baseName] || 0, num);
+                      } else {
+                        groups[name] = Math.max(groups[name] || 0, 1);
+                      }
+                    });
+                    return Object.entries(groups).map(([name, count]) => (
+                      <div
+                        key={name}
+                        className="flex items-center justify-between bg-gray-900/70 border border-gray-700 rounded-lg px-3 py-2"
+                      >
+                        <span className="text-gray-200 text-sm break-all capitalize">{name}</span>
+                        <span className="text-cyan-400 text-xs font-semibold bg-cyan-500/10 border border-cyan-500/20 rounded-full px-2.5 py-0.5 ml-3 whitespace-nowrap">
+                          {count}
+                        </span>
+                      </div>
+                    ));
+                  })()}
                 </div>
               ) : (
                 <p className="text-gray-400 text-sm py-8 text-center">
