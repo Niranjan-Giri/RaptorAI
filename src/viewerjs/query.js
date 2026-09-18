@@ -16,7 +16,8 @@ export function createQueryHandler(app, sceneManager, ui) {
         getSceneMetadata,
         localQueryHandler,
         handleQuerySend,
-        normalizeQuestion
+        normalizeQuestion,
+        generateCSVFromScene
     };
 
     return handler;
@@ -106,6 +107,55 @@ export function createQueryHandler(app, sceneManager, ui) {
             const object = (match[1] || match[2] || '').trim().toLowerCase(); const file = sceneFiles.find(f => f.filename.toLowerCase().includes(object)); if (file) { responseData.results = [{ object: file.filename, vertex_count: file.vertex_count }]; responseData.columns = ['object', 'vertex_count']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData }; }
         }
         return { handled: false };
+    }
+
+    /**
+     * Generate CSV content from scene metadata.
+     * @param {string[]} columns - Columns to include, e.g. ['object','size_x','size_y','size_z','position_x','position_y','position_z','vertex_count']
+     * @returns {{ csvContent: string, filename: string, previewRows: string[][] }}
+     */
+    function generateCSVFromScene(columns) {
+        const sceneFiles = getSceneMetadata();
+        // All possible columns
+        const allCols = ['object', 'size_x', 'size_y', 'size_z', 'position_x', 'position_y', 'position_z', 'vertex_count', 'visible'];
+        // If columns not specified or empty, pick sensible defaults
+        let cols = (columns && columns.length > 0) ? columns : allCols;
+        // Validate columns
+        cols = cols.filter(c => allCols.includes(c));
+        if (cols.length === 0) cols = allCols;
+
+        const rows = sceneFiles.map(f => {
+            const name = f.filename.replace(/\.ply$/i, '');
+            const row = {};
+            row['object'] = name;
+            row['size_x'] = f.bbox.size[0]?.toFixed(4) ?? '';
+            row['size_y'] = f.bbox.size[1]?.toFixed(4) ?? '';
+            row['size_z'] = f.bbox.size[2]?.toFixed(4) ?? '';
+            row['position_x'] = f.bbox.center[0]?.toFixed(4) ?? '';
+            row['position_y'] = f.bbox.center[1]?.toFixed(4) ?? '';
+            row['position_z'] = f.bbox.center[2]?.toFixed(4) ?? '';
+            row['vertex_count'] = f.vertex_count ?? '';
+            row['visible'] = f.visible ? 'yes' : 'no';
+            return row;
+        });
+
+        // Build CSV
+        const header = cols.join(',');
+        const csvRows = rows.map(r => cols.map(c => {
+            const val = String(r[c] ?? '');
+            // Escape commas/quotes in values
+            return val.includes(',') || val.includes('"') ? `"${val.replace(/"/g, '""')}"` : val;
+        }).join(','));
+        const csvContent = [header, ...csvRows].join('\n');
+
+        // Build preview (first 5 rows)
+        const previewRows = rows.slice(0, 5).map(r => cols.map(c => String(r[c] ?? '')));
+
+        // Generate filename with timestamp
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const filename = `scene_data_${ts}.csv`;
+
+        return { csvContent, filename, previewRows, columns: cols, totalRows: rows.length };
     }
 
     async function geminiQueryHandler(question, sceneFiles, abortSignal) {
@@ -216,6 +266,14 @@ export function createQueryHandler(app, sceneManager, ui) {
             - To rotate an object: [ACTION:ROTATE:'filename.ply':'axis':degrees]
               Axis: x, y, z
               Example: [ACTION:ROTATE:'B3_S4.ply':'y':90]
+            - To generate/export a CSV file with scene data: [ACTION:GENERATE_CSV:columns:col1,col2,col3]
+              Available columns: object, size_x, size_y, size_z, position_x, position_y, position_z, vertex_count, visible
+              Example: [ACTION:GENERATE_CSV:columns:object,size_x,size_y,size_z]
+              Use this when the user asks to create/export/make/generate a CSV, table, spreadsheet, or data file.
+              Pick the columns that best match what the user asked for.
+              If they ask for "size" include object,size_x,size_y,size_z.
+              If they ask for "position" or "location" include object,position_x,position_y,position_z.
+              If they ask for "everything" or "all data" include all columns.
 
             RULES:
             - If the question asks to highlight or find an object, provide the exact filename in your response so the user knows.
@@ -223,7 +281,9 @@ export function createQueryHandler(app, sceneManager, ui) {
             - If you mention a filename, put it in single quotes like 'filename.ply'.
             - When asked to move objects, use the appropriate ACTION code.
             - For relative movements (left, right, etc.), use reasonable default amounts like 1 or 2 units if not specified.
-            - IMPORTANT MEMORY RULE: if user says pronouns like "it", "that", "this", "them", resolve to context.lastReferencedObject when available.`;
+            - IMPORTANT MEMORY RULE: if user says pronouns like "it", "that", "this", "them", resolve to context.lastReferencedObject when available.
+            - When user asks to create/make/export/generate a CSV, file, spreadsheet, or table with data, ALWAYS use the GENERATE_CSV action.
+            - Briefly describe what data is included in the CSV in your text response.`;
             /****************************************************************** */
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -477,9 +537,23 @@ export function createQueryHandler(app, sceneManager, ui) {
                     userDisplayMessage = userDisplayMessage.replace(rotateMatch[0], '');
                 }
 
-                // Display cleaned message
-                if (ui) ui.showInlineQueryMessage(userDisplayMessage.trim(), 'assistant');
-                addHistory('assistant', userDisplayMessage.trim());
+                // Check for GENERATE_CSV
+                const csvMatch = rawAnswer.match(/\[ACTION:GENERATE_CSV:columns:([\w,]+)\]/);
+                if (csvMatch) {
+                    const requestedCols = csvMatch[1].split(',').map(c => c.trim()).filter(Boolean);
+                    const csvData = generateCSVFromScene(requestedCols);
+                    userDisplayMessage = userDisplayMessage.replace(csvMatch[0], '');
+                    // Show the text message first, then attach the file
+                    if (ui) {
+                        ui.showInlineQueryMessage(userDisplayMessage.trim(), 'assistant');
+                        ui.showFileAttachment(csvData.filename, csvData.csvContent, csvData.previewRows, csvData.columns, csvData.totalRows);
+                    }
+                    addHistory('assistant', userDisplayMessage.trim() + `\n[Generated ${csvData.filename}]`);
+                } else {
+                    // Display cleaned message
+                    if (ui) ui.showInlineQueryMessage(userDisplayMessage.trim(), 'assistant');
+                    addHistory('assistant', userDisplayMessage.trim());
+                }
 
                 const filenameFromAnswer = detectFilenameMention(userDisplayMessage);
                 if (filenameFromAnswer) lastReferencedFilename = filenameFromAnswer;

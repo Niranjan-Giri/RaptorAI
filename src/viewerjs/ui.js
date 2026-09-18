@@ -6,6 +6,7 @@ export function createUIManager(app, sceneManager, queryHandler) {
         createInfoIcon,
         createInfoModal,
         showInlineQueryMessage,
+        showFileAttachment,
         createFileCheckboxes,
         updateObjectLabelsUI,
         updateInfoIconPosition,
@@ -174,6 +175,111 @@ export function createUIManager(app, sceneManager, queryHandler) {
                 if (msg.parentElement) msg.remove();
             }, duration);
         }
+    }
+
+    /**
+     * Show a file attachment (e.g. CSV) inline in the chat with download + preview.
+     * @param {string} filename - Display name and download filename
+     * @param {string} content - Raw file content (CSV text)
+     * @param {string[][]} previewRows - First N rows for preview table
+     * @param {string[]} columns - Column headers
+     * @param {number} totalRows - Total number of data rows
+     */
+    function showFileAttachment(filename, content, previewRows, columns, totalRows) {
+        const chatMessagesContainer = document.getElementById('query-inline-messages');
+        if (!chatMessagesContainer) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('chat-msg', 'chat-file-attachment');
+
+        // --- Header row: file icon + name + row count ---
+        const header = document.createElement('div');
+        header.className = 'cfa-header';
+        header.innerHTML = `
+            <svg class="cfa-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            <div class="cfa-name-block">
+                <span class="cfa-filename">${filename}</span>
+                <span class="cfa-meta">${totalRows} rows · ${columns.length} columns</span>
+            </div>
+        `;
+        wrapper.appendChild(header);
+
+        // --- Preview table (collapsible) ---
+        const previewSection = document.createElement('div');
+        previewSection.className = 'cfa-preview';
+        let previewOpen = true;
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'cfa-toggle';
+        toggleBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="cfa-chevron"><polyline points="6 9 12 15 18 9"/></svg> Preview`;
+        toggleBtn.addEventListener('click', () => {
+            previewOpen = !previewOpen;
+            tableWrap.style.display = previewOpen ? 'block' : 'none';
+            toggleBtn.querySelector('.cfa-chevron').style.transform = previewOpen ? 'rotate(0deg)' : 'rotate(-90deg)';
+        });
+        previewSection.appendChild(toggleBtn);
+
+        const tableWrap = document.createElement('div');
+        tableWrap.className = 'cfa-table-wrap';
+        let tableHTML = '<table class="cfa-table"><thead><tr>';
+        columns.forEach(col => { tableHTML += `<th>${col}</th>`; });
+        tableHTML += '</tr></thead><tbody>';
+        previewRows.forEach(row => {
+            tableHTML += '<tr>';
+            row.forEach(cell => { tableHTML += `<td>${cell}</td>`; });
+            tableHTML += '</tr>';
+        });
+        tableHTML += '</tbody></table>';
+        if (totalRows > previewRows.length) {
+            tableHTML += `<div class="cfa-more">… and ${totalRows - previewRows.length} more rows</div>`;
+        }
+        tableWrap.innerHTML = tableHTML;
+        previewSection.appendChild(tableWrap);
+        wrapper.appendChild(previewSection);
+
+        // --- Action buttons: Download + Copy ---
+        const actions = document.createElement('div');
+        actions.className = 'cfa-actions';
+
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'cfa-btn cfa-btn-download';
+        downloadBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download`;
+        downloadBtn.addEventListener('click', () => {
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        });
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'cfa-btn cfa-btn-copy';
+        copyBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy`;
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(content).then(() => {
+                copyBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg> Copied!`;
+                setTimeout(() => {
+                    copyBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy`;
+                }, 2000);
+            });
+        });
+
+        actions.appendChild(downloadBtn);
+        actions.appendChild(copyBtn);
+        wrapper.appendChild(actions);
+
+        chatMessagesContainer.appendChild(wrapper);
+        chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
     }
 
     function createFileCheckboxes() {
