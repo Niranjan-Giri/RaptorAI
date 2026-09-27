@@ -464,36 +464,18 @@ export function createSceneManager(app, ui) {
         if (app.selectedFile) {
             const fileData = app.loadedFiles.get(app.selectedFile);
 
-            // Sync Highlight Box position with Object position
+            // Sync Highlight Box position/size with object's current world transform
             if (fileData && fileData.object && app.highlightBoxes) {
-                // Get the main highlight box mesh
-                const boxMesh = app.highlightBoxes.get(app.selectedFile) || app.highlightBoxes.get(app.selectedFile + ':outline');
+                const currentBox     = app.highlightBoxes.get(app.selectedFile);
+                const currentOutline = app.highlightBoxes.get(app.selectedFile + ':outline');
 
-                if (boxMesh) {
-                    // Recompute world center of the object
-                    if (!fileData.geometry.boundingBox) fileData.geometry.computeBoundingBox();
+                if (currentBox || currentOutline) {
+                    // Use world-space bbox so scale/rotation are accounted for
+                    const worldBox    = new THREE.Box3().setFromObject(fileData.object);
+                    const worldCenter = new THREE.Vector3();
+                    worldBox.getCenter(worldCenter);
 
-                    // We need to apply the object's current World Matrix to the center of its local bounding box
-                    // to find where the box should be in World Space.
-                    const localCenter = new THREE.Vector3();
-                    fileData.geometry.boundingBox.getCenter(localCenter);
-
-                    // Transform local center to world space
-                    const worldCenter = localCenter.clone().applyMatrix4(fileData.object.matrixWorld);
-
-                    // Apply rotation and scale if needed, but for an AABB highlight we usually just follow position
-                    // Ideally, the highlight box should match the object's transform.
-                    // Simple approach: Set box position to object's world center
-
-                    // Note: This assumes the HighlightBox was created axis-aligned in World Space. 
-                    // If we rotate the object, the AABB naturally changes, but our BoxGeometry is static.
-                    // For a true OBB (Oriented Bounding Box), we should copy position/quaternion.
-                    // For now, let's copy position to strictly follow the drag.
-
-                    const currentBox = app.highlightBoxes.get(app.selectedFile);
-                    const currentOutline = app.highlightBoxes.get(app.selectedFile + ':outline');
-
-                    if (currentBox) currentBox.position.copy(worldCenter);
+                    if (currentBox)     currentBox.position.copy(worldCenter);
                     if (currentOutline) currentOutline.position.copy(worldCenter);
                 }
             }
@@ -1055,35 +1037,48 @@ export function createSceneManager(app, ui) {
 
     function createHighlightBox({ name, filename, center = [0, 0, 0], size = [1, 1, 1] }) {
         clearHighlights();
-        const boxSize = new THREE.Vector3(size[0] || 1, size[1] || 1, size[2] || 1);
+
+        // Determine world-space center and size:
+        // If an exact filename match is found in loadedFiles, use the object's world bbox.
+        // Otherwise fall back to the provided center/size arrays (which should already be world-space
+        // when called from query.js after localToWorld()).
+        let worldCenter = new THREE.Vector3(center[0] || 0, center[1] || 0, center[2] || 0);
+        let boxSize     = new THREE.Vector3(size[0] || 1, size[1] || 1, size[2] || 1);
+
+        // Try to find by exact map key first, then by filepath substring
+        let fileEntry = filename ? app.loadedFiles.get(filename) : null;
+        if (!fileEntry && filename) {
+            for (const [, fd] of app.loadedFiles.entries()) {
+                if (fd.filepath && (fd.filepath.endsWith(filename) || fd.filepath.includes(filename))) {
+                    fileEntry = fd; break;
+                }
+            }
+        }
+
+        if (fileEntry && fileEntry.object && fileEntry.geometry) {
+            // Use world-space bounding box so the highlight respects object transform
+            const worldBox = new THREE.Box3().setFromObject(fileEntry.object);
+            worldBox.getCenter(worldCenter);
+            worldBox.getSize(boxSize);
+        }
+
         const geometry = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z);
         const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.12, depthTest: false });
-        const boxMesh = new THREE.Mesh(geometry, material);
-        const centerVec = new THREE.Vector3(center[0] || 0, center[1] || 0, center[2] || 0);
-        if (filename) {
-            const fileEntry = Array.from(app.loadedFiles.values()).find(f => f.filepath && (f.filepath.endsWith(filename) || f.filepath.includes(filename)));
-            if (fileEntry && fileEntry.object) {
-                fileEntry.geometry.computeBoundingBox();
-                const localCenter = new THREE.Vector3();
-                fileEntry.geometry.boundingBox.getCenter(localCenter);
-                fileEntry.object.localToWorld(localCenter);
-                boxMesh.position.copy(localCenter);
-            } else {
-                boxMesh.position.copy(centerVec);
-            }
-        } else {
-            boxMesh.position.copy(centerVec);
-        }
-        const edges = new THREE.EdgesGeometry(geometry);
-        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 }));
-        line.position.copy(boxMesh.position);
+        const boxMesh  = new THREE.Mesh(geometry, material);
+        boxMesh.position.copy(worldCenter);
+
+        const edges   = new THREE.EdgesGeometry(geometry);
+        const lineMat = new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 2 });
+        const line    = new THREE.LineSegments(edges, lineMat);
+        line.position.copy(worldCenter);
+
         app.scene.add(boxMesh);
         app.scene.add(line);
         if (!app.highlightBoxes) app.highlightBoxes = new Map();
         const key = name || filename || 'highlight';
         app.highlightBoxes.set(key, boxMesh);
         app.highlightBoxes.set(key + ':outline', line);
-        animateCameraTo(boxMesh.position, { size: boxSize }, 700);
+        animateCameraTo(worldCenter, { size: boxSize }, 700);
     }
 
     function animateCameraTo(targetCenter, options = {}, duration = 700) {

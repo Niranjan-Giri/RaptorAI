@@ -1,6 +1,32 @@
 import * as THREE from 'three';
+import { analyzeGeometry, inferObjectType } from './geometryAnalysis.js';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+// Lazy geometry-analysis cache: filename → analysis result
+// Cleared whenever the scene is reloaded.
+const _geoCache = new Map();
+
+/**
+ * Run geometry analysis for a single loaded file (cached).
+ * @param {string} filename
+ * @param {object} fileData
+ */
+function getGeoAnalysis(filename, fileData) {
+    if (!fileData || !fileData.geometry) return null;
+    if (_geoCache.has(filename)) return _geoCache.get(filename);
+    try {
+        const result = analyzeGeometry(fileData.geometry, filename);
+        _geoCache.set(filename, result);
+        return result;
+    } catch (e) {
+        console.warn('[GeoAnalysis] Failed for', filename, e);
+        return null;
+    }
+}
+
+/** Invalidate analysis cache (call when scene reloads). */
+export function clearGeoAnalysisCache() { _geoCache.clear(); }
 
 export function createQueryHandler(app, sceneManager, ui) {
     const queryCache = new Map();
@@ -56,9 +82,31 @@ export function createQueryHandler(app, sceneManager, ui) {
         const files = [];
         app.loadedFiles.forEach((fileData, filename) => {
             if (!fileData.geometry) return;
-            const geometry = fileData.geometry; geometry.computeBoundingBox(); const bbox = geometry.boundingBox;
-            const center = new THREE.Vector3(); bbox.getCenter(center);
-            files.push({ filename, visible: !!fileData.visible, vertex_count: geometry.attributes.position.count, bbox: { min: bbox.min.toArray(), max: bbox.max.toArray(), size: bbox.getSize(new THREE.Vector3()).toArray(), center: center.toArray() } });
+            const geometry = fileData.geometry;
+            geometry.computeBoundingBox();
+            const bbox   = geometry.boundingBox;
+            const center = new THREE.Vector3();
+            bbox.getCenter(center);
+
+            // Run geometry analysis (cached)
+            const geo = getGeoAnalysis(filename, fileData);
+
+            files.push({
+                filename,
+                visible:      !!fileData.visible,
+                vertex_count: geometry.attributes.position.count,
+                object_type:  geo?.objectType  ?? inferObjectType(filename),
+                height:       geo?.height       ?? null,
+                diameter:     geo?.diameter     ?? null,
+                volume:       geo?.volume       ?? null,
+                surface_area: geo?.surface_area ?? null,
+                bbox: {
+                    min:    bbox.min.toArray(),
+                    max:    bbox.max.toArray(),
+                    size:   bbox.getSize(new THREE.Vector3()).toArray(),
+                    center: center.toArray(),
+                },
+            });
         });
         return files;
     }
@@ -111,49 +159,69 @@ export function createQueryHandler(app, sceneManager, ui) {
 
     /**
      * Generate CSV content from scene metadata.
-     * @param {string[]} columns - Columns to include, e.g. ['object','size_x','size_y','size_z','position_x','position_y','position_z','vertex_count']
-     * @returns {{ csvContent: string, filename: string, previewRows: string[][] }}
+     *
+     * Supported columns:
+     *   object, object_type, position_x, position_y, position_z,
+     *   size_x, size_y, size_z, height, diameter, volume, surface_area,
+     *   vertex_count, visible
+     *
+     * @param {string[]} requestedColumns
+     * @param {string}   [filterType]  – optional object type filter ('tank'|'pipe'|'pump')
+     * @returns {{ csvContent: string, filename: string, previewRows: string[][], columns: string[], totalRows: number }}
      */
-    function generateCSVFromScene(columns) {
+    function generateCSVFromScene(requestedColumns, filterType) {
         const sceneFiles = getSceneMetadata();
-        // All possible columns
-        const allCols = ['object', 'size_x', 'size_y', 'size_z', 'position_x', 'position_y', 'position_z', 'vertex_count', 'visible'];
-        // If columns not specified or empty, pick sensible defaults
-        let cols = (columns && columns.length > 0) ? columns : allCols;
-        // Validate columns
-        cols = cols.filter(c => allCols.includes(c));
-        if (cols.length === 0) cols = allCols;
 
-        const rows = sceneFiles.map(f => {
-            const name = f.filename.replace(/\.ply$/i, '');
+        const ALL_COLS = [
+            'object', 'object_type',
+            'position_x', 'position_y', 'position_z',
+            'size_x', 'size_y', 'size_z',
+            'height', 'diameter', 'volume', 'surface_area',
+            'vertex_count', 'visible',
+        ];
+
+        let cols = (requestedColumns && requestedColumns.length > 0)
+            ? requestedColumns.filter(c => ALL_COLS.includes(c))
+            : ALL_COLS;
+        if (cols.length === 0) cols = ALL_COLS;
+
+        // Apply type filter if requested
+        let filteredFiles = sceneFiles;
+        if (filterType) {
+            filteredFiles = sceneFiles.filter(f =>
+                (f.object_type || '').toLowerCase() === filterType.toLowerCase()
+            );
+        }
+
+        const rows = filteredFiles.map(f => {
+            const name = f.filename.replace(/\.(?:ply|drc)$/i, '');
             const row = {};
-            row['object'] = name;
-            row['size_x'] = f.bbox.size[0]?.toFixed(4) ?? '';
-            row['size_y'] = f.bbox.size[1]?.toFixed(4) ?? '';
-            row['size_z'] = f.bbox.size[2]?.toFixed(4) ?? '';
-            row['position_x'] = f.bbox.center[0]?.toFixed(4) ?? '';
-            row['position_y'] = f.bbox.center[1]?.toFixed(4) ?? '';
-            row['position_z'] = f.bbox.center[2]?.toFixed(4) ?? '';
+            row['object']       = name;
+            row['object_type']  = f.object_type  ?? '';
+            row['position_x']   = f.bbox.center[0]?.toFixed(4) ?? '';
+            row['position_y']   = f.bbox.center[1]?.toFixed(4) ?? '';
+            row['position_z']   = f.bbox.center[2]?.toFixed(4) ?? '';
+            row['size_x']       = f.bbox.size[0]?.toFixed(4)   ?? '';
+            row['size_y']       = f.bbox.size[1]?.toFixed(4)   ?? '';
+            row['size_z']       = f.bbox.size[2]?.toFixed(4)   ?? '';
+            row['height']       = f.height       != null ? f.height.toFixed(4)       : '';
+            row['diameter']     = f.diameter     != null ? f.diameter.toFixed(4)     : '';
+            row['volume']       = f.volume       != null ? f.volume.toFixed(4)       : '';
+            row['surface_area'] = f.surface_area != null ? f.surface_area.toFixed(4) : '';
             row['vertex_count'] = f.vertex_count ?? '';
-            row['visible'] = f.visible ? 'yes' : 'no';
+            row['visible']      = f.visible ? 'yes' : 'no';
             return row;
         });
 
-        // Build CSV
-        const header = cols.join(',');
-        const csvRows = rows.map(r => cols.map(c => {
+        const header   = cols.join(',');
+        const csvRows  = rows.map(r => cols.map(c => {
             const val = String(r[c] ?? '');
-            // Escape commas/quotes in values
             return val.includes(',') || val.includes('"') ? `"${val.replace(/"/g, '""')}"` : val;
         }).join(','));
         const csvContent = [header, ...csvRows].join('\n');
-
-        // Build preview (first 5 rows)
         const previewRows = rows.slice(0, 5).map(r => cols.map(c => String(r[c] ?? '')));
-
-        // Generate filename with timestamp
         const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        const filename = `scene_data_${ts}.csv`;
+        const filename = filterType ? `${filterType}_data_${ts}.csv` : `scene_data_${ts}.csv`;
 
         return { csvContent, filename, previewRows, columns: cols, totalRows: rows.length };
     }
@@ -164,136 +232,163 @@ export function createQueryHandler(app, sceneManager, ui) {
         }
 
         try {
-            // Prepare context about the scene for the LLM
+            // ── Build context ────────────────────────────────────────────────────
+            // Group files by object type for concise summary
+            const typeGroups = {};
+            sceneFiles.forEach(f => {
+                const t = f.object_type || 'unknown';
+                if (!typeGroups[t]) typeGroups[t] = [];
+                typeGroups[t].push(f.filename);
+            });
+
+            // Per-type aggregate stats (total surface area etc.)
+            const typeStats = {};
+            for (const [type, names] of Object.entries(typeGroups)) {
+                const members = sceneFiles.filter(f => f.object_type === type);
+                const totalSA  = members.reduce((s, f) => s + (f.surface_area ?? 0), 0);
+                const totalVol = members.reduce((s, f) => s + (f.volume ?? 0), 0);
+                typeStats[type] = {
+                    count: members.length,
+                    total_surface_area: parseFloat(totalSA.toFixed(4)),
+                    total_volume:       parseFloat(totalVol.toFixed(4)),
+                };
+            }
+
             const context = {
                 fileCount: sceneFiles.length,
+                typeGroups,
+                typeStats,
                 files: sceneFiles.map(f => ({
-                    filename: f.filename,
-                    visible: f.visible,
-                    vertices: f.vertex_count,
-                    position: f.bbox.center,
-                    size: f.bbox.size
+                    filename:     f.filename,
+                    object_type:  f.object_type,
+                    visible:      f.visible,
+                    vertices:     f.vertex_count,
+                    position:     f.bbox.center,
+                    size:         f.bbox.size,
+                    height:       f.height     != null ? parseFloat(f.height.toFixed(4))       : null,
+                    diameter:     f.diameter   != null ? parseFloat(f.diameter.toFixed(4))     : null,
+                    volume:       f.volume     != null ? parseFloat(f.volume.toFixed(4))       : null,
+                    surface_area: f.surface_area != null ? parseFloat(f.surface_area.toFixed(4)) : null,
                 })),
-                sceneMapping: app.sceneInfo ? 'Available' : 'Not available',
+                sceneMapping:         app.sceneInfo ? 'Available' : 'Not available',
+                selectedObject:       app.selectedFile || null,
                 lastReferencedObject: lastReferencedFilename,
-                recentConversation: conversationHistory.slice(-8)
+                recentConversation:   conversationHistory.slice(-8),
+                calculated_distances: [],
             };
-            // Dynamic Distance Calculation (On-Demand)
-            context.calculated_distances = [];
-            const qLower = question.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, " "); // Replace punctuation with space
+
+            // If a specific object is selected, add its full analysis to context
+            if (app.selectedFile) {
+                const fd = app.loadedFiles.get(app.selectedFile);
+                const geo = getGeoAnalysis(app.selectedFile, fd);
+                if (geo) {
+                    context.selectedObjectAnalysis = {
+                        filename:     app.selectedFile,
+                        object_type:  geo.objectType,
+                        height:       parseFloat(geo.height.toFixed(4)),
+                        diameter:     parseFloat(geo.diameter.toFixed(4)),
+                        radius:       parseFloat(geo.radius.toFixed(4)),
+                        volume:       geo.volume     != null ? parseFloat(geo.volume.toFixed(4))       : null,
+                        surface_area: geo.surface_area != null ? parseFloat(geo.surface_area.toFixed(4)) : null,
+                    };
+                }
+            }
+
+            // Dynamic distance calculation
+            const qLower  = question.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ');
             const qTokens = new Set(qLower.split(/\s+/));
 
-            // Helper to check if file is mentioned
             const getMentionedFiles = () => {
                 const mentioned = new Set();
                 sceneFiles.forEach(f => {
-                    const fname = f.filename.toLowerCase(); // e.g. "b3_s4.ply"
-                    const fnameNoExt = fname.replace('.ply', ''); // "b3_s4"
-                    const fnameParts = fnameNoExt.split(/[_-\s]+/); // ["b3", "s4"]
-
-                    // Strategy 1: Exact match of filename or no-ext (relaxed spaces)
-                    // "B3_S4" -> matches "b3_s4" or "b3 s4"
-                    const relaxedName = fnameNoExt.replace(/[_-\s]+/g, ' ');
-
-                    if (qLower.includes(fname) || qLower.includes(fnameNoExt) || qLower.includes(relaxedName)) {
-                        mentioned.add(f);
-                        return;
+                    const fname     = f.filename.toLowerCase();
+                    const noExt     = fname.replace(/\.(ply|drc)$/i, '');
+                    const relaxed   = noExt.replace(/[_\-\s]+/g, ' ');
+                    if (qLower.includes(fname) || qLower.includes(noExt) || qLower.includes(relaxed)) {
+                        mentioned.add(f); return;
                     }
-
-                    // Strategy 2: Check aliases
-                    if (app.sceneInfo && app.sceneInfo._map) {
+                    if (app.sceneInfo?._map) {
                         for (const [key, val] of app.sceneInfo._map.entries()) {
-                            // key is already lowercased token from map
-                            if (qTokens.has(key) || qLower.includes(key)) {
-                                if (val.filename === f.filename) {
-                                    mentioned.add(f);
-                                    return;
-                                }
+                            if ((qTokens.has(key) || qLower.includes(key)) && val.filename === f.filename) {
+                                mentioned.add(f); return;
                             }
                         }
                     }
                 });
-                return Array.from(mentioned).filter(Boolean);
+                return Array.from(mentioned);
             };
 
             const targetFiles = getMentionedFiles();
-
-            // If the query specifically asks for distance/far/close AND targets found
-            const distKeywords = ['distance', 'dist', 'far', 'close', 'near', 'between'];
-            const isDistanceQuery = distKeywords.some(k => qLower.includes(k));
-
-            if (isDistanceQuery && targetFiles.length >= 2) {
+            const distKW = ['distance','dist','far','close','near','between'];
+            if (distKW.some(k => qLower.includes(k)) && targetFiles.length >= 2) {
                 for (let i = 0; i < targetFiles.length; i++) {
-                    for (let j = i + 1; j < targetFiles.length; j++) {
-                        const f1 = targetFiles[i];
-                        const f2 = targetFiles[j];
-                        const p1 = new THREE.Vector3().fromArray(f1.bbox.center);
-                        const p2 = new THREE.Vector3().fromArray(f2.bbox.center);
-                        const dist = p1.distanceTo(p2);
-                        const entry = {
-                            pair: `${f1.filename} <-> ${f2.filename}`,
-                            distance: parseFloat(dist.toFixed(3))
-                        };
-                        context.calculated_distances.push(entry);
+                    for (let j = i+1; j < targetFiles.length; j++) {
+                        const p1 = new THREE.Vector3().fromArray(targetFiles[i].bbox.center);
+                        const p2 = new THREE.Vector3().fromArray(targetFiles[j].bbox.center);
+                        context.calculated_distances.push({
+                            pair: `${targetFiles[i].filename} <-> ${targetFiles[j].filename}`,
+                            distance: parseFloat(p1.distanceTo(p2).toFixed(3)),
+                        });
                     }
                 }
             }
 
-
             /*************************************************************/
-            const systemPrompt = `You are an intelligent assistant for a 3D Point Cloud Viewer. 
-            You answer questions about the current scene.
-            
-            Current Scene Data:
-            ${JSON.stringify(context, null, 2)}
-            
-            User Question: "${question}"
-            
-            Answer concisely. 
-            
-            ACTIONS:
-            If the user asks to perform an action, include one of the following codes in your response:
-            - To zoom in on the scene: [ACTION:ZOOM_IN]
-            - To zoom out of the scene: [ACTION:ZOOM_OUT]
-            - To show/add an object: [ACTION:SHOW:'filename.ply']
-            - To hide/remove an object: [ACTION:HIDE:'filename.ply']
-            - To move an object relatively: [ACTION:MOVE:'filename.ply':'direction':amount]
-              Directions: left, right, up, down, forward, back
-              Amount: numeric value (e.g., 1.5, 2, 0.5)
-              Example: [ACTION:MOVE:'B3_S4.ply':'left':2]
-            - To move an object to absolute position: [ACTION:POSITION:'filename.ply':x:y:z]
-              Example: [ACTION:POSITION:'B3_S4.ply':1.5:0:0]
-            - To rotate an object: [ACTION:ROTATE:'filename.ply':'axis':degrees]
-              Axis: x, y, z
-              Example: [ACTION:ROTATE:'B3_S4.ply':'y':90]
-            - To generate/export a CSV file with scene data: [ACTION:GENERATE_CSV:columns:col1,col2,col3]
-              Available columns: object, size_x, size_y, size_z, position_x, position_y, position_z, vertex_count, visible
-              Example: [ACTION:GENERATE_CSV:columns:object,size_x,size_y,size_z]
-              Use this when the user asks to create/export/make/generate a CSV, table, spreadsheet, or data file.
-              Pick the columns that best match what the user asked for.
-              If they ask for "size" include object,size_x,size_y,size_z.
-              If they ask for "position" or "location" include object,position_x,position_y,position_z.
-              If they ask for "everything" or "all data" include all columns.
+            const systemPrompt = `You are an intelligent 3D Point Cloud Viewer assistant specialising in industrial facility inspection.
 
-            RULES:
-            - If the question asks to highlight or find an object, provide the exact filename in your response so the user knows.
-            - If the question asks for distance, look at the 'calculated_distances' array.
-            - If you mention a filename, put it in single quotes like 'filename.ply'.
-            - When asked to move objects, use the appropriate ACTION code.
-            - For relative movements (left, right, etc.), use reasonable default amounts like 1 or 2 units if not specified.
-            - IMPORTANT MEMORY RULE: if user says pronouns like "it", "that", "this", "them", resolve to context.lastReferencedObject when available.
-            - When user asks to create/make/export/generate a CSV, file, spreadsheet, or table with data, ALWAYS use the GENERATE_CSV action.
-            - Briefly describe what data is included in the CSV in your text response.`;
-            /****************************************************************** */
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+Current Scene Data (JSON):
+${JSON.stringify(context, null, 2)}
+
+User Question: "${question}"
+
+Answer concisely and precisely. When giving numeric answers, round to 2–4 decimal places and include units (metres / m³ / m²).
+
+AVAILABLE ACTIONS — include in your response exactly as shown:
+
+[ACTION:ZOOM_IN]              — zoom in
+[ACTION:ZOOM_OUT]             — zoom out
+[ACTION:SHOW:'filename']      — make object visible
+[ACTION:HIDE:'filename']      — hide object
+[ACTION:MOVE:'filename':'direction':amount]   — relative move (left/right/up/down/forward/back)
+[ACTION:POSITION:'filename':x:y:z]            — absolute position
+[ACTION:ROTATE:'filename':'axis':degrees]     — rotate (axis: x/y/z)
+
+[ACTION:GENERATE_CSV:columns:col1,col2,col3]  — export CSV
+  Available columns: object, object_type, position_x, position_y, position_z,
+                     size_x, size_y, size_z, height, diameter, volume, surface_area,
+                     vertex_count, visible
+  Optional suffix: :filter:tank  (or :filter:pipe  :filter:pump) — only include that type.
+  Example (tanks only): [ACTION:GENERATE_CSV:columns:object,position_x,position_y,position_z,height,diameter:filter:tank]
+
+[ACTION:HIGHLIGHT_TYPE:'typeName']            — highlight / zoom all objects of a given type
+  Example: [ACTION:HIGHLIGHT_TYPE:'pump']
+
+[ACTION:HIGHLIGHT_CONNECTED:'tankFilename']   — highlight pipes spatially near the given tank
+  Example: [ACTION:HIGHLIGHT_CONNECTED:'tank_OSCG_4']
+
+RULES:
+- For "how many X" questions, count filenames matching the type in context.typeGroups or context.files.
+  e.g. "How many pumps?" → look at context.typeGroups.pump.length or typeStats.pump.count.
+- For volume / surface area of a selected object, use context.selectedObjectAnalysis (if available).
+  If the user says "this tank" or "it", resolve to context.selectedObject or context.lastReferencedObject.
+- For total surface area of all tanks → sum f.surface_area for all files where object_type === 'tank'
+  (typeStats.tank.total_surface_area is pre-calculated for you).
+- For CSV export of location + height + diameter of tanks:
+  [ACTION:GENERATE_CSV:columns:object,position_x,position_y,position_z,height,diameter:filter:tank]
+- Pipes connected to a tank: use [ACTION:HIGHLIGHT_CONNECTED:'tank_filename']; also list the pipe
+  filenames that are spatially nearby (bbox overlap or small distance).
+- If you mention a filename, put it in single quotes like 'tank_OSCG_4'.
+- IMPORTANT: pronouns like "it","this","that" → resolve to context.selectedObject then context.lastReferencedObject.
+- ALWAYS use GENERATE_CSV when the user asks to create / export / make / generate a CSV, table, or spreadsheet.`;
+            /*************************************************************/
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
             const response = await fetch(url, {
-                method: 'POST',
+                method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                signal: abortSignal,
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: systemPrompt }] }]
-                })
+                signal:  abortSignal,
+                body:    JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }] }] })
             });
 
             if (!response.ok) {
@@ -301,15 +396,12 @@ export function createQueryHandler(app, sceneManager, ui) {
                 throw new Error(errData.error?.message || 'Gemini API Error');
             }
 
-            const data = await response.json();
+            const data   = await response.json();
             const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate an answer.";
-
-            return { handled: true, answer: answer };
+            return { handled: true, answer };
 
         } catch (error) {
-            if (error?.name === 'AbortError') {
-                return { handled: false, aborted: true, error: 'Request aborted by user' };
-            }
+            if (error?.name === 'AbortError') return { handled: false, aborted: true, error: 'Request aborted by user' };
             return { handled: false, error: error.message };
         }
     }
@@ -537,20 +629,82 @@ export function createQueryHandler(app, sceneManager, ui) {
                     userDisplayMessage = userDisplayMessage.replace(rotateMatch[0], '');
                 }
 
-                // Check for GENERATE_CSV
-                const csvMatch = rawAnswer.match(/\[ACTION:GENERATE_CSV:columns:([\w,]+)\]/);
+                // ── GENERATE_CSV (with optional :filter:type suffix) ───────────
+                const csvMatch = rawAnswer.match(/\[ACTION:GENERATE_CSV:columns:([\w,]+)(?::filter:(\w+))?\]/);
                 if (csvMatch) {
                     const requestedCols = csvMatch[1].split(',').map(c => c.trim()).filter(Boolean);
-                    const csvData = generateCSVFromScene(requestedCols);
+                    const filterType    = csvMatch[2] || null;
+                    const csvData = generateCSVFromScene(requestedCols, filterType);
                     userDisplayMessage = userDisplayMessage.replace(csvMatch[0], '');
-                    // Show the text message first, then attach the file
                     if (ui) {
                         ui.showInlineQueryMessage(userDisplayMessage.trim(), 'assistant');
                         ui.showFileAttachment(csvData.filename, csvData.csvContent, csvData.previewRows, csvData.columns, csvData.totalRows);
                     }
                     addHistory('assistant', userDisplayMessage.trim() + `\n[Generated ${csvData.filename}]`);
-                } else {
-                    // Display cleaned message
+                }
+
+                // ── HIGHLIGHT_TYPE ────────────────────────────────────────────
+                const hlTypeMatch = rawAnswer.match(/\[ACTION:HIGHLIGHT_TYPE:'(.*?)'\]/);
+                if (hlTypeMatch) {
+                    const typeName = hlTypeMatch[1].toLowerCase();
+                    const matches  = sceneFiles.filter(f => (f.object_type || '').toLowerCase() === typeName && f.visible);
+                    matches.forEach(f => {
+                        const fd = app.loadedFiles.get(f.filename);
+                        if (fd && fd.geometry) {
+                            fd.geometry.computeBoundingBox();
+                            const center = new THREE.Vector3();
+                            fd.geometry.boundingBox.getCenter(center);
+                            if (fd.object) fd.object.localToWorld(center);
+                            const size = fd.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
+                            sceneManager.createHighlightBox({ name: f.filename, filename: f.filename, center: center.toArray(), size });
+                        }
+                    });
+                    userDisplayMessage = userDisplayMessage.replace(hlTypeMatch[0], '');
+                }
+
+                // ── HIGHLIGHT_CONNECTED ───────────────────────────────────────
+                const hlConnMatch = rawAnswer.match(/\[ACTION:HIGHLIGHT_CONNECTED:'(.*?)'\]/);
+                if (hlConnMatch) {
+                    const tankName = hlConnMatch[1];
+                    const tankActual = findMatchingFilename(tankName);
+                    if (tankActual) {
+                        lastReferencedFilename = tankActual;
+                        const tankFD = app.loadedFiles.get(tankActual);
+                        if (tankFD && tankFD.geometry) {
+                            // Compute world-space bounding box of the tank
+                            tankFD.geometry.computeBoundingBox();
+                            const tankBoxWorld = new THREE.Box3().setFromObject(tankFD.object || new THREE.Object3D());
+
+                            // Expand by a proximity margin (e.g. 2 m) to catch nearby pipes
+                            const PROXIMITY = 2.0;
+                            const expanded = tankBoxWorld.clone().expandByScalar(PROXIMITY);
+
+                            // Find all pipe-type files whose bbox intersects the expanded tank box
+                            const connectedPipes = [];
+                            app.loadedFiles.forEach((fd, fname) => {
+                                if (!fd.geometry || !fd.visible) return;
+                                const t = inferObjectType(fname);
+                                if (t !== 'pipe') return;
+                                fd.geometry.computeBoundingBox();
+                                const pipeBox = new THREE.Box3().setFromObject(fd.object || new THREE.Object3D());
+                                if (expanded.intersectsBox(pipeBox)) {
+                                    connectedPipes.push(fname);
+                                    const center = pipeBox.getCenter(new THREE.Vector3());
+                                    const size   = pipeBox.getSize(new THREE.Vector3()).toArray();
+                                    sceneManager.createHighlightBox({ name: fname, filename: fname, center: center.toArray(), size });
+                                }
+                            });
+
+                            if (connectedPipes.length === 0) {
+                                if (ui) ui.showInlineQueryMessage(`No nearby pipes found for '${tankActual}'.`, 'info');
+                            }
+                        }
+                    }
+                    userDisplayMessage = userDisplayMessage.replace(hlConnMatch[0], '');
+                }
+
+                // Show final message (if not already shown by CSV branch)
+                if (!csvMatch) {
                     if (ui) ui.showInlineQueryMessage(userDisplayMessage.trim(), 'assistant');
                     addHistory('assistant', userDisplayMessage.trim());
                 }
@@ -558,20 +712,20 @@ export function createQueryHandler(app, sceneManager, ui) {
                 const filenameFromAnswer = detectFilenameMention(userDisplayMessage);
                 if (filenameFromAnswer) lastReferencedFilename = filenameFromAnswer;
 
-                // Optional: Try to detect filename in AI response to highlight only if NOT hiding
-                if (hideMatches.length === 0) {
-                    const potentialFiles = sceneFiles.map(f => f.filename);
-                    for (const file of potentialFiles) {
-                        // Simple check if filename appears in the answer
-                        if (userDisplayMessage.includes(file)) {
-                            // trigger highlight if exact match found
-                            const f = app.loadedFiles.get(file);
-                            if (f && f.geometry && f.visible) { // Only highlight if visible
-                                f.geometry.computeBoundingBox();
-                                const center = f.geometry.boundingBox.getCenter(new THREE.Vector3()).toArray();
-                                const size = f.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
-                                sceneManager.createHighlightBox({ name: file, filename: file, center, size });
+                // Auto-highlight first filename mentioned in AI answer (world-space aware)
+                if (!hideMatches.length && !hlTypeMatch && !hlConnMatch) {
+                    for (const f of sceneFiles) {
+                        if (userDisplayMessage.includes(f.filename)) {
+                            const fd = app.loadedFiles.get(f.filename);
+                            if (fd && fd.geometry && fd.visible) {
+                                fd.geometry.computeBoundingBox();
+                                const center = new THREE.Vector3();
+                                fd.geometry.boundingBox.getCenter(center);
+                                if (fd.object) fd.object.localToWorld(center);
+                                const size = fd.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
+                                sceneManager.createHighlightBox({ name: f.filename, filename: f.filename, center: center.toArray(), size });
                             }
+                            break; // only highlight first match
                         }
                     }
                 }

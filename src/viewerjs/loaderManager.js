@@ -6,6 +6,22 @@
 import * as THREE from 'three';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
+/**
+ * Rewrites an absolute GCS URL (https://storage.googleapis.com/...)
+ * to go through the Vite dev-server proxy (/gcs-proxy/...) so the browser
+ * doesn't hit a CORS/COEP block.  In production the URL is returned unchanged
+ * (the backend / CDN is expected to set correct CORS headers there).
+ */
+function rewriteGcsUrl(url) {
+    if (!url || typeof url !== 'string') return url;
+    if (!import.meta.env.DEV) return url; // production: no rewrite needed
+    // Match https://storage.googleapis.com/<rest including query string>
+    const match = url.match(/^https?:\/\/storage\.googleapis\.com(\/.*)?$/);
+    if (!match) return url;
+    // Keep the path + query string; Vite will forward to storage.googleapis.com
+    return `/gcs-proxy${match[1] || ''}`;
+}
+
 export class LoaderManager {
     constructor(onFileLoaded, onFileProgress, onFileError) {
         this.onFileLoaded = onFileLoaded;
@@ -65,8 +81,14 @@ export class LoaderManager {
                 this.onFileProgress(filename, 'Starting DRC load...', 0);
             }
 
+            // Rewrite GCS URLs through the dev-server proxy to bypass CORS/COEP
+            const loadUrl = rewriteGcsUrl(filepath);
+            if (loadUrl !== filepath) {
+                console.log(`%c[DRACO] Rewrote GCS URL through proxy`, 'color: #ffab40;', `\n  Original: ${filepath}\n  Proxied:  ${loadUrl}`);
+            }
+
             this.dracoLoader.load(
-                filepath,
+                loadUrl,
                 (geometry) => {
                     if (this.sessionId !== loadSession) {
                         console.log(`[DRACO] Ignoring stale load callback for '${filename}' (session ${loadSession} vs active ${this.sessionId})`);

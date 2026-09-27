@@ -23,6 +23,24 @@ export default defineConfig(({ mode }) => {
           target: configuredApiBaseUrl, // Backend server URL
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, '')
+        },
+        // Proxy GCS signed URLs through the dev server to bypass browser CORS/COEP restrictions.
+        // DRC file URLs are rewritten from their full GCS URL to /gcs-proxy/<path>?<query>
+        // before being passed to the loader (see loaderManager.js rewriteGcsUrl helper).
+        '/gcs-proxy': {
+          target: 'https://storage.googleapis.com',
+          changeOrigin: true,
+          secure: true,
+          rewrite: (path) => path.replace(/^\/gcs-proxy/, ''),
+          configure: (proxy) => {
+            proxy.on('proxyRes', (proxyRes) => {
+              // Remove headers that would block the resource under COEP
+              delete proxyRes.headers['cross-origin-resource-policy'];
+              delete proxyRes.headers['cross-origin-embedder-policy'];
+              // Inject permissive CORS so Three.js XHR succeeds
+              proxyRes.headers['access-control-allow-origin'] = '*';
+            });
+          }
         }
       }
     },

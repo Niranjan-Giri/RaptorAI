@@ -2,6 +2,7 @@ import axios from "axios";
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
 const apiBaseUrl = import.meta.env.DEV
+  //? "http://localhost:8080"
   ? "/api"
   : configuredApiBaseUrl;
 
