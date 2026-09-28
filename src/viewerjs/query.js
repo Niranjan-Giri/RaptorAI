@@ -84,7 +84,7 @@ export function createQueryHandler(app, sceneManager, ui) {
             if (!fileData.geometry) return;
             const geometry = fileData.geometry;
             geometry.computeBoundingBox();
-            const bbox   = geometry.boundingBox;
+            const bbox = geometry.boundingBox;
             const center = new THREE.Vector3();
             bbox.getCenter(center);
 
@@ -93,17 +93,17 @@ export function createQueryHandler(app, sceneManager, ui) {
 
             files.push({
                 filename,
-                visible:      !!fileData.visible,
+                visible: !!fileData.visible,
                 vertex_count: geometry.attributes.position.count,
-                object_type:  geo?.objectType  ?? inferObjectType(filename),
-                height:       geo?.height       ?? null,
-                diameter:     geo?.diameter     ?? null,
-                volume:       geo?.volume       ?? null,
+                object_type: geo?.objectType ?? inferObjectType(filename),
+                height: geo?.height ?? null,
+                diameter: geo?.diameter ?? null,
+                volume: geo?.volume ?? null,
                 surface_area: geo?.surface_area ?? null,
                 bbox: {
-                    min:    bbox.min.toArray(),
-                    max:    bbox.max.toArray(),
-                    size:   bbox.getSize(new THREE.Vector3()).toArray(),
+                    min: bbox.min.toArray(),
+                    max: bbox.max.toArray(),
+                    size: bbox.getSize(new THREE.Vector3()).toArray(),
                     center: center.toArray(),
                 },
             });
@@ -196,25 +196,25 @@ export function createQueryHandler(app, sceneManager, ui) {
         const rows = filteredFiles.map(f => {
             const name = f.filename.replace(/\.(?:ply|drc)$/i, '');
             const row = {};
-            row['object']       = name;
-            row['object_type']  = f.object_type  ?? '';
-            row['position_x']   = f.bbox.center[0]?.toFixed(4) ?? '';
-            row['position_y']   = f.bbox.center[1]?.toFixed(4) ?? '';
-            row['position_z']   = f.bbox.center[2]?.toFixed(4) ?? '';
-            row['size_x']       = f.bbox.size[0]?.toFixed(4)   ?? '';
-            row['size_y']       = f.bbox.size[1]?.toFixed(4)   ?? '';
-            row['size_z']       = f.bbox.size[2]?.toFixed(4)   ?? '';
-            row['height']       = f.height       != null ? f.height.toFixed(4)       : '';
-            row['diameter']     = f.diameter     != null ? f.diameter.toFixed(4)     : '';
-            row['volume']       = f.volume       != null ? f.volume.toFixed(4)       : '';
+            row['object'] = name;
+            row['object_type'] = f.object_type ?? '';
+            row['position_x'] = f.bbox.center[0]?.toFixed(4) ?? '';
+            row['position_y'] = f.bbox.center[1]?.toFixed(4) ?? '';
+            row['position_z'] = f.bbox.center[2]?.toFixed(4) ?? '';
+            row['size_x'] = f.bbox.size[0]?.toFixed(4) ?? '';
+            row['size_y'] = f.bbox.size[1]?.toFixed(4) ?? '';
+            row['size_z'] = f.bbox.size[2]?.toFixed(4) ?? '';
+            row['height'] = f.height != null ? f.height.toFixed(4) : '';
+            row['diameter'] = f.diameter != null ? f.diameter.toFixed(4) : '';
+            row['volume'] = f.volume != null ? f.volume.toFixed(4) : '';
             row['surface_area'] = f.surface_area != null ? f.surface_area.toFixed(4) : '';
             row['vertex_count'] = f.vertex_count ?? '';
-            row['visible']      = f.visible ? 'yes' : 'no';
+            row['visible'] = f.visible ? 'yes' : 'no';
             return row;
         });
 
-        const header   = cols.join(',');
-        const csvRows  = rows.map(r => cols.map(c => {
+        const header = cols.join(',');
+        const csvRows = rows.map(r => cols.map(c => {
             const val = String(r[c] ?? '');
             return val.includes(',') || val.includes('"') ? `"${val.replace(/"/g, '""')}"` : val;
         }).join(','));
@@ -232,8 +232,7 @@ export function createQueryHandler(app, sceneManager, ui) {
         }
 
         try {
-            // ── Build context ────────────────────────────────────────────────────
-            // Group files by object type for concise summary
+            // ── 1. Type summaries (always included — very compact) ─────────────
             const typeGroups = {};
             sceneFiles.forEach(f => {
                 const t = f.object_type || 'unknown';
@@ -241,162 +240,165 @@ export function createQueryHandler(app, sceneManager, ui) {
                 typeGroups[t].push(f.filename);
             });
 
-            // Per-type aggregate stats (total surface area etc.)
             const typeStats = {};
-            for (const [type, names] of Object.entries(typeGroups)) {
+            for (const [type] of Object.entries(typeGroups)) {
                 const members = sceneFiles.filter(f => f.object_type === type);
-                const totalSA  = members.reduce((s, f) => s + (f.surface_area ?? 0), 0);
-                const totalVol = members.reduce((s, f) => s + (f.volume ?? 0), 0);
                 typeStats[type] = {
                     count: members.length,
-                    total_surface_area: parseFloat(totalSA.toFixed(4)),
-                    total_volume:       parseFloat(totalVol.toFixed(4)),
+                    total_surface_area: parseFloat(members.reduce((s, f) => s + (f.surface_area ?? 0), 0).toFixed(3)),
+                    total_volume: parseFloat(members.reduce((s, f) => s + (f.volume ?? 0), 0).toFixed(3)),
                 };
             }
 
+            // ── 2. Identify files relevant to THIS query ──────────────────────
+            const qLower = question.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ');
+            const qTokens = new Set(qLower.split(/\s+/));
+
+            // Keywords that tell us which object type the user is asking about
+            const typeKeywords = { tank: ['tank', 'vessel'], pipe: ['pipe', 'tube'], pump: ['pump', 'motor', 'compressor'] };
+            let mentionedType = null;
+            for (const [type, kws] of Object.entries(typeKeywords)) {
+                if (kws.some(k => qLower.includes(k))) { mentionedType = type; break; }
+            }
+
+            // Files explicitly named in the query
+            const mentionedFiles = new Set();
+            sceneFiles.forEach(f => {
+                const fname = f.filename.toLowerCase();
+                const noExt = fname.replace(/\.(ply|drc)$/i, '');
+                const relaxed = noExt.replace(/[_\-\s]+/g, ' ');
+                if (qLower.includes(fname) || qLower.includes(noExt) || qLower.includes(relaxed)) {
+                    mentionedFiles.add(f); return;
+                }
+                if (app.sceneInfo?._map) {
+                    for (const [key, val] of app.sceneInfo._map.entries()) {
+                        if ((qTokens.has(key) || qLower.includes(key)) && val.filename === f.filename) {
+                            mentionedFiles.add(f); return;
+                        }
+                    }
+                }
+            });
+
+            // Files to include in full detail: explicitly mentioned + same type + selected object
+            const detailSet = new Set(mentionedFiles);
+            if (mentionedType) {
+                sceneFiles.filter(f => f.object_type === mentionedType).forEach(f => detailSet.add(f));
+            }
+            if (app.selectedFile) {
+                const sf = sceneFiles.find(f => f.filename === app.selectedFile);
+                if (sf) detailSet.add(sf);
+            }
+
+            // Cap at 40 files to keep prompt small
+            const detailFiles = Array.from(detailSet).slice(0, 40);
+
+            // ── 3. Build compact context ──────────────────────────────────────
             const context = {
-                fileCount: sceneFiles.length,
-                typeGroups,
-                typeStats,
-                files: sceneFiles.map(f => ({
-                    filename:     f.filename,
-                    object_type:  f.object_type,
-                    visible:      f.visible,
-                    vertices:     f.vertex_count,
-                    position:     f.bbox.center,
-                    size:         f.bbox.size,
-                    height:       f.height     != null ? parseFloat(f.height.toFixed(4))       : null,
-                    diameter:     f.diameter   != null ? parseFloat(f.diameter.toFixed(4))     : null,
-                    volume:       f.volume     != null ? parseFloat(f.volume.toFixed(4))       : null,
-                    surface_area: f.surface_area != null ? parseFloat(f.surface_area.toFixed(4)) : null,
-                })),
-                sceneMapping:         app.sceneInfo ? 'Available' : 'Not available',
-                selectedObject:       app.selectedFile || null,
+                totalFiles: sceneFiles.length,
+                typeGroups,           // {tank:[...], pipe:[...], pump:[...]}
+                typeStats,            // {tank:{count,total_surface_area,total_volume}, ...}
+                selectedObject: app.selectedFile || null,
                 lastReferencedObject: lastReferencedFilename,
-                recentConversation:   conversationHistory.slice(-8),
+                recentConversation: conversationHistory.slice(-4).map(h => `${h.role}: ${h.text.slice(0, 120)}`),
+                // Only detailed per-file data for the relevant subset
+                relevantFiles: detailFiles.map(f => ({
+                    fn: f.filename,
+                    typ: f.object_type,
+                    pos: f.bbox.center.map(v => +v.toFixed(2)),
+                    sz: f.bbox.size.map(v => +v.toFixed(2)),
+                    h: f.height != null ? +f.height.toFixed(3) : null,
+                    d: f.diameter != null ? +f.diameter.toFixed(3) : null,
+                    vol: f.volume != null ? +f.volume.toFixed(3) : null,
+                    sa: f.surface_area != null ? +f.surface_area.toFixed(3) : null,
+                    vis: f.visible,
+                })),
                 calculated_distances: [],
             };
 
-            // If a specific object is selected, add its full analysis to context
+            // Selected-object full analysis
             if (app.selectedFile) {
                 const fd = app.loadedFiles.get(app.selectedFile);
                 const geo = getGeoAnalysis(app.selectedFile, fd);
                 if (geo) {
                     context.selectedObjectAnalysis = {
-                        filename:     app.selectedFile,
-                        object_type:  geo.objectType,
-                        height:       parseFloat(geo.height.toFixed(4)),
-                        diameter:     parseFloat(geo.diameter.toFixed(4)),
-                        radius:       parseFloat(geo.radius.toFixed(4)),
-                        volume:       geo.volume     != null ? parseFloat(geo.volume.toFixed(4))       : null,
-                        surface_area: geo.surface_area != null ? parseFloat(geo.surface_area.toFixed(4)) : null,
+                        fn: app.selectedFile,
+                        typ: geo.objectType,
+                        h: +geo.height.toFixed(3),
+                        d: +geo.diameter.toFixed(3),
+                        r: +geo.radius.toFixed(3),
+                        vol: geo.volume != null ? +geo.volume.toFixed(3) : null,
+                        sa: geo.surface_area != null ? +geo.surface_area.toFixed(3) : null,
                     };
                 }
             }
 
-            // Dynamic distance calculation
-            const qLower  = question.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ');
-            const qTokens = new Set(qLower.split(/\s+/));
-
-            const getMentionedFiles = () => {
-                const mentioned = new Set();
-                sceneFiles.forEach(f => {
-                    const fname     = f.filename.toLowerCase();
-                    const noExt     = fname.replace(/\.(ply|drc)$/i, '');
-                    const relaxed   = noExt.replace(/[_\-\s]+/g, ' ');
-                    if (qLower.includes(fname) || qLower.includes(noExt) || qLower.includes(relaxed)) {
-                        mentioned.add(f); return;
-                    }
-                    if (app.sceneInfo?._map) {
-                        for (const [key, val] of app.sceneInfo._map.entries()) {
-                            if ((qTokens.has(key) || qLower.includes(key)) && val.filename === f.filename) {
-                                mentioned.add(f); return;
-                            }
-                        }
-                    }
-                });
-                return Array.from(mentioned);
-            };
-
-            const targetFiles = getMentionedFiles();
-            const distKW = ['distance','dist','far','close','near','between'];
+            // Distance calculation only for explicitly mentioned pairs
+            const targetFiles = Array.from(mentionedFiles);
+            const distKW = ['distance', 'dist', 'far', 'close', 'near', 'between'];
             if (distKW.some(k => qLower.includes(k)) && targetFiles.length >= 2) {
                 for (let i = 0; i < targetFiles.length; i++) {
-                    for (let j = i+1; j < targetFiles.length; j++) {
+                    for (let j = i + 1; j < targetFiles.length; j++) {
                         const p1 = new THREE.Vector3().fromArray(targetFiles[i].bbox.center);
                         const p2 = new THREE.Vector3().fromArray(targetFiles[j].bbox.center);
                         context.calculated_distances.push({
-                            pair: `${targetFiles[i].filename} <-> ${targetFiles[j].filename}`,
-                            distance: parseFloat(p1.distanceTo(p2).toFixed(3)),
+                            pair: `${targetFiles[i].filename}<->${targetFiles[j].filename}`,
+                            dist: +p1.distanceTo(p2).toFixed(3),
                         });
                     }
                 }
             }
 
-            /*************************************************************/
-            const systemPrompt = `You are an intelligent 3D Point Cloud Viewer assistant specialising in industrial facility inspection.
+            // ── 4. System prompt (kept concise) ───────────────────────────────
+            const systemPrompt = `You are a 3D Point Cloud Viewer assistant for industrial facility inspection.
+Scene summary: ${JSON.stringify(context)}
+Question: "${question}"
+Answer concisely. Include units (m / m³ / m²). Round numbers to 2-3 decimal places.
 
-Current Scene Data (JSON):
-${JSON.stringify(context, null, 2)}
+Key field names in relevantFiles: fn=filename, typ=type, pos=position[x,y,z], sz=size[x,y,z], h=height, d=diameter, vol=volume, sa=surface_area.
 
-User Question: "${question}"
-
-Answer concisely and precisely. When giving numeric answers, round to 2–4 decimal places and include units (metres / m³ / m²).
-
-AVAILABLE ACTIONS — include in your response exactly as shown:
-
-[ACTION:ZOOM_IN]              — zoom in
-[ACTION:ZOOM_OUT]             — zoom out
-[ACTION:SHOW:'filename']      — make object visible
-[ACTION:HIDE:'filename']      — hide object
-[ACTION:MOVE:'filename':'direction':amount]   — relative move (left/right/up/down/forward/back)
-[ACTION:POSITION:'filename':x:y:z]            — absolute position
-[ACTION:ROTATE:'filename':'axis':degrees]     — rotate (axis: x/y/z)
-
-[ACTION:GENERATE_CSV:columns:col1,col2,col3]  — export CSV
-  Available columns: object, object_type, position_x, position_y, position_z,
-                     size_x, size_y, size_z, height, diameter, volume, surface_area,
-                     vertex_count, visible
-  Optional suffix: :filter:tank  (or :filter:pipe  :filter:pump) — only include that type.
-  Example (tanks only): [ACTION:GENERATE_CSV:columns:object,position_x,position_y,position_z,height,diameter:filter:tank]
-
-[ACTION:HIGHLIGHT_TYPE:'typeName']            — highlight / zoom all objects of a given type
-  Example: [ACTION:HIGHLIGHT_TYPE:'pump']
-
-[ACTION:HIGHLIGHT_CONNECTED:'tankFilename']   — highlight pipes spatially near the given tank
-  Example: [ACTION:HIGHLIGHT_CONNECTED:'tank_OSCG_4']
+ACTIONS (embed in response exactly):
+[ACTION:ZOOM_IN] [ACTION:ZOOM_OUT]
+[ACTION:SHOW:'fn'] [ACTION:HIDE:'fn']
+[ACTION:MOVE:'fn':'dir':amt] dir=left/right/up/down/forward/back
+[ACTION:POSITION:'fn':x:y:z]
+[ACTION:ROTATE:'fn':'axis':deg] axis=x/y/z
+[ACTION:GENERATE_CSV:columns:c1,c2,...] cols: object,object_type,position_x,position_y,position_z,size_x,size_y,size_z,height,diameter,volume,surface_area,vertex_count,visible  optional: :filter:tank (or pipe/pump)
+[ACTION:HIGHLIGHT_TYPE:'type']
+[ACTION:HIGHLIGHT_CONNECTED:'tankFn']
 
 RULES:
-- For "how many X" questions, count filenames matching the type in context.typeGroups or context.files.
-  e.g. "How many pumps?" → look at context.typeGroups.pump.length or typeStats.pump.count.
-- For volume / surface area of a selected object, use context.selectedObjectAnalysis (if available).
-  If the user says "this tank" or "it", resolve to context.selectedObject or context.lastReferencedObject.
-- For total surface area of all tanks → sum f.surface_area for all files where object_type === 'tank'
-  (typeStats.tank.total_surface_area is pre-calculated for you).
-- For CSV export of location + height + diameter of tanks:
-  [ACTION:GENERATE_CSV:columns:object,position_x,position_y,position_z,height,diameter:filter:tank]
-- Pipes connected to a tank: use [ACTION:HIGHLIGHT_CONNECTED:'tank_filename']; also list the pipe
-  filenames that are spatially nearby (bbox overlap or small distance).
-- If you mention a filename, put it in single quotes like 'tank_OSCG_4'.
-- IMPORTANT: pronouns like "it","this","that" → resolve to context.selectedObject then context.lastReferencedObject.
-- ALWAYS use GENERATE_CSV when the user asks to create / export / make / generate a CSV, table, or spreadsheet.`;
-            /*************************************************************/
+- Count questions → use typeStats[type].count
+- Total surface area of all tanks → typeStats.tank.total_surface_area
+- Selected object details → selectedObjectAnalysis (h=height,d=diameter,vol=volume,sa=surface_area)
+- Pronouns (it/this/that) → selectedObject or lastReferencedObject
+- Tank CSV → [ACTION:GENERATE_CSV:columns:object,position_x,position_y,position_z,height,diameter:filter:tank]
+- ALWAYS use GENERATE_CSV for any CSV/export/spreadsheet request
+- Put filenames in single quotes`;
 
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+            // ── 5. API call ───────────────────────────────────────────────────
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
             const response = await fetch(url, {
-                method:  'POST',
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                signal:  abortSignal,
-                body:    JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }] }] })
+                signal: abortSignal,
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: systemPrompt }] }],
+                    generationConfig: {
+                        temperature: 0.2,   // low temp = faster, more deterministic answers
+                        maxOutputTokens: 512,   // caps response size → faster
+                        topP: 0.8,
+                    },
+                })
             });
 
             if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error?.message || 'Gemini API Error');
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error?.message || `HTTP ${response.status}`);
             }
 
-            const data   = await response.json();
+            const data = await response.json();
             const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate an answer.";
             return { handled: true, answer };
 
@@ -633,7 +635,7 @@ RULES:
                 const csvMatch = rawAnswer.match(/\[ACTION:GENERATE_CSV:columns:([\w,]+)(?::filter:(\w+))?\]/);
                 if (csvMatch) {
                     const requestedCols = csvMatch[1].split(',').map(c => c.trim()).filter(Boolean);
-                    const filterType    = csvMatch[2] || null;
+                    const filterType = csvMatch[2] || null;
                     const csvData = generateCSVFromScene(requestedCols, filterType);
                     userDisplayMessage = userDisplayMessage.replace(csvMatch[0], '');
                     if (ui) {
@@ -647,7 +649,7 @@ RULES:
                 const hlTypeMatch = rawAnswer.match(/\[ACTION:HIGHLIGHT_TYPE:'(.*?)'\]/);
                 if (hlTypeMatch) {
                     const typeName = hlTypeMatch[1].toLowerCase();
-                    const matches  = sceneFiles.filter(f => (f.object_type || '').toLowerCase() === typeName && f.visible);
+                    const matches = sceneFiles.filter(f => (f.object_type || '').toLowerCase() === typeName && f.visible);
                     matches.forEach(f => {
                         const fd = app.loadedFiles.get(f.filename);
                         if (fd && fd.geometry) {
@@ -690,7 +692,7 @@ RULES:
                                 if (expanded.intersectsBox(pipeBox)) {
                                     connectedPipes.push(fname);
                                     const center = pipeBox.getCenter(new THREE.Vector3());
-                                    const size   = pipeBox.getSize(new THREE.Vector3()).toArray();
+                                    const size = pipeBox.getSize(new THREE.Vector3()).toArray();
                                     sceneManager.createHighlightBox({ name: fname, filename: fname, center: center.toArray(), size });
                                 }
                             });
