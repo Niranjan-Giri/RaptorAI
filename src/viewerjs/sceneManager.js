@@ -500,6 +500,7 @@ export function createSceneManager(app, ui) {
         // 1. If requested project is ALREADY active in scene, do nothing
         if (app.currentProjectKey === projectKey && app.loadedFiles && app.loadedFiles.size > 0) {
             console.log(`[sceneManager] Project '${projectKey}' is already active in scene.`);
+            if (app.query?.precomputeSceneMetrics) app.query.precomputeSceneMetrics();
             return { isCached: true };
         }
 
@@ -580,6 +581,7 @@ export function createSceneManager(app, ui) {
                 frameAllObjects(1000);
             }, 50);
 
+            if (app.query?.precomputeSceneMetrics) app.query.precomputeSceneMetrics();
             return { isCached: true };
         }
 
@@ -899,6 +901,10 @@ export function createSceneManager(app, ui) {
                     }
                 }, 100);
             }
+        }
+
+        if (!isPreview && app.query?.analyzeLoadedFile) {
+            app.query.analyzeLoadedFile(filename);
         }
     }
 

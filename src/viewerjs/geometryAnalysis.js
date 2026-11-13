@@ -231,3 +231,75 @@ export function analyzeGeometry(geometry, filename) {
         bbox: { min: minArr, max: maxArr, size: [sizeX, sizeY, sizeZ], center },
     };
 }
+
+// ── Scene-load metric cache ────────────────────────────────────────────────
+const _geoCache = new Map();
+
+/** Invalidate analysis cache (call when the scene is reloaded). */
+export function clearGeoAnalysisCache() { _geoCache.clear(); }
+
+/** Drop a single file so it is re-analyzed after geometry changes. */
+export function invalidateGeoAnalysis(filename) {
+    if (filename) _geoCache.delete(filename);
+}
+
+/**
+ * Analyze one loaded file and store volume / area / height / diameter.
+ * @param {string} filename
+ * @param {{ geometry?: object }} fileData
+ */
+export function analyzeLoadedFile(filename, fileData) {
+    if (!filename || !fileData?.geometry) return null;
+    try {
+        const result = analyzeGeometry(fileData.geometry, filename);
+        _geoCache.set(filename, result);
+        return result;
+    } catch (e) {
+        console.warn('[GeoAnalysis] Failed for', filename, e);
+        return null;
+    }
+}
+
+/** Cached analysis, or compute now if missing. */
+export function getCachedAnalysis(filename, fileData) {
+    if (!filename) return null;
+    if (_geoCache.has(filename)) return _geoCache.get(filename);
+    return analyzeLoadedFile(filename, fileData);
+}
+
+/**
+ * Pre-calculate volume, surface area, height, and diameter for every
+ * loaded object. Used when a scene (or cached project) finishes loading.
+ * Work is chunked so RANSAC does not freeze the UI.
+ * @param {Map<string, { geometry?: object }>} loadedFiles
+ */
+export function precomputeSceneMetrics(loadedFiles) {
+    if (!loadedFiles || typeof loadedFiles.forEach !== 'function') return;
+
+    const pending = [];
+    loadedFiles.forEach((fileData, filename) => {
+        if (fileData?.geometry && !_geoCache.has(filename)) {
+            pending.push([filename, fileData]);
+        }
+    });
+    if (pending.length === 0) return;
+
+    let index = 0;
+    const step = () => {
+        const start = performance.now();
+        while (index < pending.length && performance.now() - start < 12) {
+            const [filename, fileData] = pending[index++];
+            analyzeLoadedFile(filename, fileData);
+        }
+        if (index < pending.length) {
+            if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(step, { timeout: 80 });
+            } else {
+                setTimeout(step, 0);
+            }
+        } else {
+            console.log(`[GeoAnalysis] Precomputed metrics for ${pending.length} object(s)`);
+        }
+    };
+    step();
+}

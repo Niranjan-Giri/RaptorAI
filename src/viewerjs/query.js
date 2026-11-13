@@ -1,32 +1,20 @@
 import * as THREE from 'three';
-import { analyzeGeometry, inferObjectType } from './geometryAnalysis.js';
+import {
+    inferObjectType,
+    getCachedAnalysis,
+    analyzeLoadedFile as analyzeLoadedFileMetrics,
+    precomputeSceneMetrics as precomputeLoadedMetrics,
+    clearGeoAnalysisCache,
+    invalidateGeoAnalysis,
+} from './geometryAnalysis.js';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-// Lazy geometry-analysis cache: filename → analysis result
-// Cleared whenever the scene is reloaded.
-const _geoCache = new Map();
+export { clearGeoAnalysisCache, invalidateGeoAnalysis, precomputeLoadedMetrics as precomputeSceneMetrics };
 
-/**
- * Run geometry analysis for a single loaded file (cached).
- * @param {string} filename
- * @param {object} fileData
- */
 function getGeoAnalysis(filename, fileData) {
-    if (!fileData || !fileData.geometry) return null;
-    if (_geoCache.has(filename)) return _geoCache.get(filename);
-    try {
-        const result = analyzeGeometry(fileData.geometry, filename);
-        _geoCache.set(filename, result);
-        return result;
-    } catch (e) {
-        console.warn('[GeoAnalysis] Failed for', filename, e);
-        return null;
-    }
+    return getCachedAnalysis(filename, fileData);
 }
-
-/** Invalidate analysis cache (call when scene reloads). */
-export function clearGeoAnalysisCache() { _geoCache.clear(); }
 
 export function createQueryHandler(app, sceneManager, ui) {
     const queryCache = new Map();
@@ -43,7 +31,15 @@ export function createQueryHandler(app, sceneManager, ui) {
         localQueryHandler,
         handleQuerySend,
         normalizeQuestion,
-        generateCSVFromScene
+        generateCSVFromScene,
+        analyzeLoadedFile(filename) {
+            const fileData = app.loadedFiles.get(filename);
+            invalidateGeoAnalysis(filename);
+            return analyzeLoadedFileMetrics(filename, fileData);
+        },
+        precomputeSceneMetrics() {
+            precomputeLoadedMetrics(app.loadedFiles);
+        },
     };
 
     return handler;
@@ -111,28 +107,242 @@ export function createQueryHandler(app, sceneManager, ui) {
         return files;
     }
 
+    function displayName(filename) {
+        return String(filename || '').replace(/\.(?:ply|drc)$/i, '');
+    }
+
+    function fmtNum(value, digits = 3) {
+        if (value == null || Number.isNaN(Number(value))) return null;
+        return Number(value).toFixed(digits);
+    }
+
+    function formatMetricValue(metric, value) {
+        const n = fmtNum(value);
+        if (n == null) return null;
+        if (metric === 'volume') return `${n} m³`;
+        if (metric === 'surface_area') return `${n} m²`;
+        if (metric === 'vertex_count') return String(Math.round(Number(value)));
+        return `${n} m`;
+    }
+
+    function normalizeMetricName(raw) {
+        const s = String(raw || '').toLowerCase().replace(/[_-]+/g, ' ').trim();
+        if (/^(volume|vol|capacity)$/.test(s)) return 'volume';
+        if (/^(surface area|surfacearea|area|sa)$/.test(s)) return 'surface_area';
+        if (/^(height|tall)$/.test(s)) return 'height';
+        if (/^(diameter|wide|width)$/.test(s)) return 'diameter';
+        if (/^radius$/.test(s)) return 'radius';
+        if (/^(size|big|large)$/.test(s)) return 'size';
+        if (/^(vertex count|vertices|points)$/.test(s)) return 'vertex_count';
+        return null;
+    }
+
+    function cleanObjectPhrase(phrase) {
+        return String(phrase || '')
+            .toLowerCase()
+            .replace(/[?!.,]+$/g, '')
+            .replace(/\b(please|in the scene|in this scene|here)\b/g, '')
+            .replace(/^(the|a|an|all)\s+/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function fileMatchesPhrase(file, phrase) {
+        if (!phrase) return false;
+        const fname = file.filename.toLowerCase();
+        const noExt = displayName(fname);
+        const relaxed = noExt.replace(/[_\-\s]+/g, ' ');
+        const compact = noExt.replace(/[_\-\s]+/g, '');
+        const p = phrase.replace(/[_\-\s]+/g, ' ');
+        const pCompact = phrase.replace(/[_\-\s]+/g, '');
+        if (fname.includes(phrase) || noExt.includes(phrase) || relaxed.includes(p) || compact.includes(pCompact)) {
+            return true;
+        }
+        if (app.sceneInfo?._map) {
+            for (const [key, val] of app.sceneInfo._map.entries()) {
+                if ((key === phrase || key.includes(phrase) || phrase.includes(key)) && val.filename === file.filename) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function typeFromPhrase(phrase) {
+        if (!phrase) return null;
+        if (/^tanks?$/.test(phrase) || phrase === 'vessel' || phrase === 'vessels') return 'tank';
+        if (/^pipes?$/.test(phrase) || phrase === 'tube' || phrase === 'tubes') return 'pipe';
+        if (/^pumps?$/.test(phrase) || phrase === 'motor' || phrase === 'motors') return 'pump';
+        return null;
+    }
+
+    function resolveTargets(objectPhrase, sceneFiles) {
+        const phrase = cleanObjectPhrase(objectPhrase);
+        if (!phrase || /^(it|that|this|that one|this one|them|those|its)$/.test(phrase)) {
+            const fn = app.selectedFile || lastReferencedFilename;
+            return fn ? sceneFiles.filter(f => f.filename === fn) : [];
+        }
+
+        const asType = typeFromPhrase(phrase);
+        if (asType) {
+            return sceneFiles.filter(f => (f.object_type || '').toLowerCase() === asType);
+        }
+
+        return sceneFiles.filter(f => fileMatchesPhrase(f, phrase));
+    }
+
+    function metricFromFile(file, metric) {
+        if (metric === 'size') return file.bbox?.size ?? null;
+        if (metric === 'radius') {
+            if (file.diameter != null) return file.diameter / 2;
+            return null;
+        }
+        return file[metric] ?? null;
+    }
+
+    function describeFileMetric(file, metric) {
+        const name = displayName(file.filename);
+        if (metric === 'size') {
+            const s = file.bbox?.size;
+            if (!s) return null;
+            return `'${name}' size is ${fmtNum(s[0])} × ${fmtNum(s[1])} × ${fmtNum(s[2])} m (X × Y × Z).`;
+        }
+        const formatted = formatMetricValue(metric, metricFromFile(file, metric));
+        if (!formatted) return null;
+        const label = metric === 'surface_area' ? 'surface area' : metric.replace('_', ' ');
+        return `'${name}' ${label} is ${formatted}.`;
+    }
+
+    function localMetricAnswer(question, sceneFiles) {
+        const q = normalizeQuestion(question).replace(/[?!]+$/g, '').trim();
+
+        const totalMatch = q.match(
+            /(?:what(?:'s| is)|give me |tell me )?(?:the )?(total|combined|sum(?: of)?)\s+(volume|surface\s*area|area|height|diameter)\s+(?:of|for)\s+(?:all\s+)?(.+)/i
+        );
+        if (totalMatch) {
+            const metric = normalizeMetricName(totalMatch[2]);
+            const targets = resolveTargets(totalMatch[3], sceneFiles);
+            if (!metric || targets.length === 0) return { handled: false };
+            if (metric !== 'volume' && metric !== 'surface_area') return { handled: false };
+            const values = targets.map(f => metricFromFile(f, metric)).filter(v => v != null && !Number.isNaN(v));
+            if (values.length === 0) return { handled: false };
+            const sum = values.reduce((a, b) => a + b, 0);
+            const label = metric === 'surface_area' ? 'surface area' : 'volume';
+            const answer = `Total ${label} of ${targets.length} object(s): ${formatMetricValue(metric, sum)}.`;
+            return { handled: true, answer, filename: targets[0]?.filename };
+        }
+
+        const ofMatch = q.match(
+            /(?:what(?:'s| is)|give me |tell me |how much is |how much )?(?:the )?(volume|vol|capacity|surface\s*area|area|height|diameter|radius|size|vertex\s*count|vertices)\s+(?:of|for)\s+(?:the |a |an )?(.+)/i
+        );
+        if (ofMatch) {
+            const metric = normalizeMetricName(ofMatch[1]);
+            const targets = resolveTargets(ofMatch[2], sceneFiles);
+            return answerFromTargets(metric, targets);
+        }
+
+        const possMatch = q.match(
+            /(?:what(?:'s| is) )?(?:the )?(.+?)(?:'s)\s+(volume|surface\s*area|area|height|diameter|radius|size)/i
+        );
+        if (possMatch) {
+            const metric = normalizeMetricName(possMatch[2]);
+            const targets = resolveTargets(possMatch[1], sceneFiles);
+            return answerFromTargets(metric, targets);
+        }
+
+        const howMatch = q.match(/how\s+(tall|wide|big|large)\s+is\s+(?:the |a |an )?(.+)/i);
+        if (howMatch) {
+            const metric = normalizeMetricName(howMatch[1]);
+            const targets = resolveTargets(howMatch[2], sceneFiles);
+            return answerFromTargets(metric, targets);
+        }
+
+        const doesMatch = q.match(
+            /how much (volume|surface\s*area|area) does (?:the |a |an )?(.+?)(?: have)?$/i
+        );
+        if (doesMatch) {
+            const metric = normalizeMetricName(doesMatch[1]);
+            const targets = resolveTargets(doesMatch[2], sceneFiles);
+            return answerFromTargets(metric, targets);
+        }
+
+        return { handled: false };
+    }
+
+    function answerFromTargets(metric, targets) {
+        if (!metric || !targets || targets.length === 0) return { handled: false };
+        const lines = targets.map(f => describeFileMetric(f, metric)).filter(Boolean);
+        if (lines.length === 0) return { handled: false };
+        return {
+            handled: true,
+            answer: lines.join('\n'),
+            filename: targets[0].filename,
+        };
+    }
+
     function localQueryHandler(question) {
         const q = normalizeQuestion(question);
-        if (queryCache.has(q)) return { handled: true, data: queryCache.get(q) };
-        const sceneFiles = getSceneMetadata(); const filenamesLower = sceneFiles.map(f => f.filename.toLowerCase());
+        if (queryCache.has(q)) return queryCache.get(q);
+        const sceneFiles = getSceneMetadata();
+        const filenamesLower = sceneFiles.map(f => f.filename.toLowerCase());
         const responseData = { success: true, question, sql: null, results: [], columns: [], row_count: 0 };
-        let match = q.match(/how many (?:of )?([\w\s-]+)s?\b/);
+
+        const metricHit = localMetricAnswer(question, sceneFiles);
+        if (metricHit.handled) {
+            queryCache.set(q, metricHit);
+            return metricHit;
+        }
+
+        let match = q.match(/vertex count (?:of )?(?:the )?([\w\s-]+)|how many vertices (?:in|for|does|are in) ([\w\s-]+)/);
+        if (match) {
+            const object = (match[1] || match[2] || '').trim().toLowerCase();
+            const file = sceneFiles.find(f => f.filename.toLowerCase().includes(object));
+            if (file) {
+                const answer = `'${displayName(file.filename)}' has ${file.vertex_count} vertices.`;
+                const result = { handled: true, answer, filename: file.filename, data: { ...responseData, results: [{ object: file.filename, vertex_count: file.vertex_count }], columns: ['object', 'vertex_count'], row_count: 1 } };
+                queryCache.set(q, result);
+                return result;
+            }
+        }
+        match = q.match(/how many (?:of )?([\w\s-]+)s?\b/);
         if (!match) match = q.match(/count (?:the )?(\w+)s?\b/);
         if (match) {
             let object = match[1]; object = object.trim().toLowerCase(); if (object.endsWith('s')) object = object.slice(0, -1);
-            const count = filenamesLower.filter(f => f.includes(object)).length; responseData.results = [{ object, count }]; responseData.columns = ['object', 'count']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData };
+            if (/^(vertice|vertex|point|volume|area)$/.test(object)) {
+                return { handled: false };
+            }
+            const asType = typeFromPhrase(object) || typeFromPhrase(`${object}s`);
+            const count = asType
+                ? sceneFiles.filter(f => (f.object_type || '').toLowerCase() === asType).length
+                : filenamesLower.filter(f => f.includes(object)).length;
+            const answer = asType
+                ? `There ${count === 1 ? 'is' : 'are'} ${count} ${asType}${count === 1 ? '' : 's'} in the scene.`
+                : `There ${count === 1 ? 'is' : 'are'} ${count} object(s) matching '${object}'.`;
+            const result = { handled: true, answer, data: { ...responseData, results: [{ object, count }], columns: ['object', 'count'], row_count: 1 } };
+            queryCache.set(q, result);
+            return result;
         }
         match = q.match(/is there (?:a|an|the )?([\w\s-]+)/);
         if (match) {
             let object = match[1]; object = object.trim().toLowerCase(); if (object.endsWith('s')) object = object.slice(0, -1);
             let exists = filenamesLower.some(f => f.includes(object));
+            let filename = null;
             if (app.sceneInfo && app.sceneInfo._map) {
                 const lower = object.toLowerCase(); const entry = app.sceneInfo._map.get(lower); exists = Boolean(entry) || sceneFiles.some(f => f.filename.toLowerCase().includes(lower));
                 if (entry) {
-                    responseData.results = [{ object, exists: true, filename: entry.filename }]; responseData.columns = ['object', 'exists', 'filename']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData };
+                    filename = entry.filename;
+                    const answer = `Yes, '${object}' is in the scene (${displayName(entry.filename)}).`;
+                    const result = { handled: true, answer, filename, data: { ...responseData, results: [{ object, exists: true, filename: entry.filename }], columns: ['object', 'exists', 'filename'], row_count: 1 } };
+                    queryCache.set(q, result);
+                    return result;
                 }
             }
-            responseData.results = [{ object, exists }]; responseData.columns = ['object', 'exists']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData };
+            const answer = exists
+                ? `Yes, '${object}' is in the scene.`
+                : `No, '${object}' is not in the scene.`;
+            const result = { handled: true, answer, filename, data: { ...responseData, results: [{ object, exists }], columns: ['object', 'exists'], row_count: 1 } };
+            queryCache.set(q, result);
+            return result;
         }
         match = q.match(/where is (?:a|an|the )?([\w\s-]+)/);
         if (match) {
@@ -146,13 +356,23 @@ export function createQueryHandler(app, sceneManager, ui) {
                         const f = sceneFiles.find(ff => ff.filename.toLowerCase().includes(String(entry.filename).toLowerCase())); if (f) { center = f.bbox.center; size = f.bbox.size; }
                     }
                     const bboxInfo = app.sceneInfo.bounding_box && app.sceneInfo.bounding_box[entry.key]; if (bboxInfo) size = [bboxInfo.x || size[0], bboxInfo.y || size[1], bboxInfo.z || size[2]];
-                    responseData.results = [{ object: entry.key, center, size, filename: entry.filename }]; responseData.columns = ['object', 'center', 'size']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData };
-                } else { responseData.results = [{ object, exists: false }]; responseData.columns = ['object', 'exists']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData }; }
-            } else { let file = sceneFiles.find(f => f.filename.toLowerCase().includes(object)); if (file) { responseData.results = [{ object, center: file.bbox.center, size: file.bbox.size, filename: file.filename }]; responseData.columns = ['object', 'center', 'size']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData }; } }
-        }
-        match = q.match(/vertex count (?:of )?(?:the )?([\w\s-]+)|how many vertices (?:in|for) ([\w\s-]+)/);
-        if (match) {
-            const object = (match[1] || match[2] || '').trim().toLowerCase(); const file = sceneFiles.find(f => f.filename.toLowerCase().includes(object)); if (file) { responseData.results = [{ object: file.filename, vertex_count: file.vertex_count }]; responseData.columns = ['object', 'vertex_count']; responseData.row_count = 1; queryCache.set(q, responseData); return { handled: true, data: responseData }; }
+                    const answer = `'${entry.key}' is at [${center.map(v => fmtNum(v, 2)).join(', ')}] m with size [${size.map(v => fmtNum(v, 2)).join(', ')}] m.`;
+                    const result = { handled: true, answer, filename: entry.filename, data: { ...responseData, results: [{ object: entry.key, center, size, filename: entry.filename }], columns: ['object', 'center', 'size'], row_count: 1 } };
+                    queryCache.set(q, result);
+                    return result;
+                }
+                const answer = `'${object}' was not found in the scene.`;
+                const result = { handled: true, answer, data: { ...responseData, results: [{ object, exists: false }], columns: ['object', 'exists'], row_count: 1 } };
+                queryCache.set(q, result);
+                return result;
+            }
+            const file = sceneFiles.find(f => f.filename.toLowerCase().includes(object));
+            if (file) {
+                const answer = `'${displayName(file.filename)}' is at [${file.bbox.center.map(v => fmtNum(v, 2)).join(', ')}] m with size [${file.bbox.size.map(v => fmtNum(v, 2)).join(', ')}] m.`;
+                const result = { handled: true, answer, filename: file.filename, data: { ...responseData, results: [{ object, center: file.bbox.center, size: file.bbox.size, filename: file.filename }], columns: ['object', 'center', 'size'], row_count: 1 } };
+                queryCache.set(q, result);
+                return result;
+            }
         }
         return { handled: false };
     }
@@ -486,7 +706,32 @@ RULES:
         }
         queryInput.value = '';
 
-        // UX: Show "Thinking..." state
+        const sceneFiles = getSceneMetadata();
+        const localResponse = localQueryHandler(query);
+        if (localResponse?.handled && localResponse.answer) {
+            if (ui) ui.showInlineQueryMessage(localResponse.answer, 'assistant');
+            addHistory('assistant', localResponse.answer);
+            const highlightName = localResponse.filename || detectFilenameMention(localResponse.answer);
+            if (highlightName) lastReferencedFilename = highlightName;
+            if (highlightName) {
+                const f = sceneFiles.find(sf => sf.filename === highlightName)
+                    || sceneFiles.find(sf => sf.filename.toLowerCase().includes(String(highlightName).toLowerCase()));
+                if (f) {
+                    const fd = app.loadedFiles.get(f.filename);
+                    if (fd?.geometry && fd.visible) {
+                        fd.geometry.computeBoundingBox();
+                        const center = new THREE.Vector3();
+                        fd.geometry.boundingBox.getCenter(center);
+                        if (fd.object) fd.object.localToWorld(center);
+                        const size = fd.geometry.boundingBox.getSize(new THREE.Vector3()).toArray();
+                        sceneManager.createHighlightBox({ name: f.filename, filename: f.filename, center: center.toArray(), size });
+                    }
+                }
+            }
+            return;
+        }
+
+        // UX: Show "Thinking..." state — Gemini is last resort
         isQueryInFlight = true;
         if (querySendBtn) {
             querySendBtn.innerHTML = PAUSE_ICON;
@@ -497,8 +742,6 @@ RULES:
 
         try {
             currentAbortController = new AbortController();
-            // Gemini AI Only Mode
-            const sceneFiles = getSceneMetadata();
             const contextualQuery = enrichQuestionWithSessionReference(query);
             const aiResponse = await geminiQueryHandler(contextualQuery, sceneFiles, currentAbortController.signal);
 
