@@ -4,6 +4,7 @@ import "./style.css";
 import { initializeApp } from "../../viewerjs/app.entry.js";
 import { normalizeViewerFileUrl } from "../../viewerjs/pathUtils.js";
 import { EXAMPLE_PLY_FILES } from "../../components/username.jsx";
+import { clearGeoAnalysisCache } from "../../viewerjs/query.js";
 import api from "../../api";
 const Viewer = () => {
   const location = useLocation();
@@ -95,6 +96,8 @@ const Viewer = () => {
             }
 
             if (app.sceneManager && typeof app.sceneManager.loadProject === 'function') {
+              // Clear cached geometry analysis so the new scene gets fresh measurements
+              clearGeoAnalysisCache();
               const res = app.sceneManager.loadProject({
                 projectKey,
                 files: filesToLoad

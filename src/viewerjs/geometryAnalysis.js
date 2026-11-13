@@ -8,9 +8,9 @@
  */
 
 // ─── Constants ─────────────────────────────────────────────────────────────
-const RANSAC_ITERATIONS    = 200;
-const RANSAC_INLIER_THRESH = 0.05;
-const RANSAC_SAMPLE_LIMIT  = 8000;
+const RANSAC_ITERATIONS    = 400;   // more iterations → better convergence
+const RANSAC_INLIER_THRESH = 0.05;  // default; overridden adaptively per-object
+const RANSAC_SAMPLE_LIMIT  = 10000; // slightly more points for accuracy
 
 // ─── Object-type keywords ──────────────────────────────────────────────────
 const TYPE_KEYWORDS = {
@@ -143,35 +143,81 @@ export function analyzeGeometry(geometry, filename) {
     const sizeZ  = maxArr[2] - minArr[2];
     const center = [(minArr[0]+maxArr[0])/2, (minArr[1]+maxArr[1])/2, (minArr[2]+maxArr[2])/2];
 
-    // Height = vertical extent (Z)
-    const height = Math.max(sizeZ, 0.001);
+    const objectType = inferObjectType(filename);
 
-    const objectType    = inferObjectType(filename);
-    const isCylindrical = objectType === 'tank' || objectType === 'pipe';
+    // ── Adaptive RANSAC threshold ────────────────────────────────────────────
+    // Use 2% of the estimated radius from the bbox so both small and large
+    // objects get reasonable inlier counts (a fixed 5 cm is too tight for
+    // a 3-metre-radius tank and too loose for a 20-cm pipe).
+    const estimatedRadius = Math.max(sizeX, sizeY) / 2;
+    const adaptiveThresh  = Math.max(0.03, estimatedRadius * 0.04); // 4% of radius, min 3 cm
 
-    const circleResult = circleRANSAC(geometry);
+    const circleResult = circleRANSAC(geometry, {
+        iterations:      RANSAC_ITERATIONS,
+        inlierThreshold: adaptiveThresh,
+        sampleLimit:     RANSAC_SAMPLE_LIMIT,
+    });
 
-    // Prefer RANSAC diameter; fall back to largest XY bbox extent
-    const diameter = (circleResult && circleResult.inlierRatio > 0.15)
-        ? circleResult.diameter
-        : Math.max(sizeX, sizeY);
-    const radius = diameter / 2;
+    // ── Diameter selection ───────────────────────────────────────────────────
+    // Accept RANSAC if it found a reasonable circle (inlier ratio > 8%).
+    // Fall back to the largest XY bounding-box extent (which equals the
+    // true diameter for a perfect circular cross-section).
+    const ransacOk = circleResult && circleResult.inlierRatio > 0.08;
+    const diameter = ransacOk ? circleResult.diameter : Math.max(sizeX, sizeY);
+    const radius   = diameter / 2;
 
+    // ── Height selection ─────────────────────────────────────────────────────
+    // For a vertical cylinder the height axis is Z (scan-space up).
+    // But the Z bbox may include ground-level offset, so use the raw extent.
+    // If the object is taller in X or Y (horizontal tank / pipe), pick that.
+    // We define "height" as the dimension that makes the cylinder taller than wide.
+    let height;
+    if (objectType === 'tank' || objectType === 'pipe') {
+        // Primary candidate: Z-axis (vertical installation)
+        // Cross-check: if sizeZ < diameter it's likely a horizontal tank, use longest axis
+        if (sizeZ >= diameter * 0.5) {
+            // Vertical: height = sizeZ
+            height = sizeZ;
+        } else {
+            // Horizontal: height = longest of X / Y
+            height = Math.max(sizeX, sizeY, sizeZ);
+        }
+    } else {
+        height = Math.max(sizeX, sizeY, sizeZ);
+    }
+    height = Math.max(height, 0.001);
+
+    // ── Volume & surface area ────────────────────────────────────────────────
     let volume       = null;
     let surface_area = null;
 
     if (objectType === 'tank') {
-        // Closed vertical cylinder: V = πr²h,  SA = 2πr² + 2πrh
+        // Closed vertical cylinder: V = πr²h,  SA = 2πr(r + h)
         volume       = Math.PI * radius * radius * height;
         surface_area = 2 * Math.PI * radius * (radius + height);
     } else if (objectType === 'pipe') {
-        // Open-ended cylinder: V = πr²h,  SA = 2πrh (lateral only)
+        // Open-ended cylinder: V = πr²h,  SA = 2πrh
         volume       = Math.PI * radius * radius * height;
         surface_area = 2 * Math.PI * radius * height;
     } else if (objectType === 'pump') {
-        // Bounding-box approximation
         volume       = sizeX * sizeY * sizeZ;
         surface_area = 2 * (sizeX * sizeY + sizeY * sizeZ + sizeX * sizeZ);
+    }
+
+    // ── Debug diagnostics (tanks only) ──────────────────────────────────────
+    if (objectType === 'tank') {
+        const ranAns = ransacOk
+            ? `RANSAC ✓ (r=${circleResult.radius.toFixed(3)}m, inliers=${(circleResult.inlierRatio*100).toFixed(1)}%, thresh=${adaptiveThresh.toFixed(3)}m)`
+            : `RANSAC ✗ → bbox fallback (inlierRatio=${circleResult ? (circleResult.inlierRatio*100).toFixed(1)+'%' : 'n/a'}, thresh=${adaptiveThresh.toFixed(3)}m)`;
+        console.log(
+            `%c[GeoAnalysis] TANK: ${filename}`,
+            'color:#00e5ff; font-weight:bold',
+            `\n  BBox:     X=${sizeX.toFixed(3)}m  Y=${sizeY.toFixed(3)}m  Z=${sizeZ.toFixed(3)}m` +
+            `\n  Diameter: ${diameter.toFixed(3)} m  (${ranAns})` +
+            `\n  Height:   ${height.toFixed(3)} m` +
+            `\n  Volume:   ${volume?.toFixed(3)} m³` +
+            `\n  Surf.Area:${surface_area?.toFixed(3)} m²`
+        );
     }
 
     return {

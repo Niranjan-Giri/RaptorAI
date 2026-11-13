@@ -376,7 +376,11 @@ RULES:
 - Put filenames in single quotes`;
 
             // ── 5. API call ───────────────────────────────────────────────────
+            // Adaptive token cap: large for CSV/list exports, small for chat
+            const needsLargeOutput = /\b(csv|export|all|list|every|spreadsheet|table)\b/i.test(question);
+            const maxOutputTokens = needsLargeOutput ? 2048 : 400;
 
+            // gemini-1.5-flash: stable model with generous free quota
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
             const response = await fetch(url, {
@@ -386,8 +390,8 @@ RULES:
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: systemPrompt }] }],
                     generationConfig: {
-                        temperature: 0.2,   // low temp = faster, more deterministic answers
-                        maxOutputTokens: 512,   // caps response size → faster
+                        temperature: 0.2,
+                        maxOutputTokens,
                         topP: 0.8,
                     },
                 })
